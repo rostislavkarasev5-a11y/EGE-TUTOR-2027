@@ -1,0 +1,17 @@
+# Адаптивная диагностика (ADR-0002, реализация — Phase 5).
+# Состав и количество задач определяет диагностический движок; здесь — бюджеты и пороги.
+
+[budget]
+max_tasks_per_subject = 25
+max_minutes_per_subject = 90
+
+[stopping]
+# Остановка, когда половина ширины диапазона прогноза ≤ этого числа тестовых баллов.
+target_forecast_half_width = 5.0
+# Остановка, когда следующая задача почти не уменьшает неопределённость.
+min_information_gain = 0.01
+
+[rules]
+hints_allowed = false
+ai_allowed = false
+allowed_verification_statuses = ["REVIEWED"]
