@@ -8,6 +8,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -25,6 +26,7 @@ from ege_tutor.core.domain import (
     AnswerType,
     AttemptMode,
     AttemptStatus,
+    CodeVerdict,
     ImportBatchStatus,
     Subject,
     TaskSource,
@@ -236,6 +238,9 @@ class TaskRow(Base):
     hints: Mapped[list["TaskHintRow"]] = relationship(
         cascade="all, delete-orphan", order_by="TaskHintRow.level"
     )
+    tests: Mapped[list["TaskTestCaseRow"]] = relationship(
+        cascade="all, delete-orphan", order_by="TaskTestCaseRow.position"
+    )
 
 
 class TaskSkillRow(Base):
@@ -267,6 +272,19 @@ class TaskHintRow(Base):
     task_id: Mapped[int] = mapped_column(ForeignKey("task.id"), primary_key=True)
     level: Mapped[int] = mapped_column(primary_key=True)
     text: Mapped[str] = mapped_column(Text)
+
+
+class TaskTestCaseRow(Base):
+    """Тест-кейс для программы к задаче информатики (Phase 3)."""
+
+    __tablename__ = "task_test_case"
+    __table_args__ = (CheckConstraint("position >= 1", name="position_positive"),)
+
+    task_id: Mapped[int] = mapped_column(ForeignKey("task.id"), primary_key=True)
+    position: Mapped[int] = mapped_column(primary_key=True)
+    input: Mapped[str] = mapped_column(Text)
+    output: Mapped[str] = mapped_column(Text)
+    files_json: Mapped[str] = mapped_column(Text, server_default="{}")
 
 
 # ── попытки ─────────────────────────────────────────────────────────────────
@@ -308,3 +326,27 @@ class HintEventRow(Base):
     attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"))
     level: Mapped[int]
     shown_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class CodeRunRow(Base):
+    """Запуск программы к задаче (Phase 3). Строки никогда не удаляются."""
+
+    __tablename__ = "code_run"
+    __table_args__ = (
+        CheckConstraint("tests_passed BETWEEN 0 AND tests_total", name="tests_passed_range"),
+        Index("ix_code_run_task_created", "task_id", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("task.id"))
+    attempt_id: Mapped[int | None] = mapped_column(ForeignKey("attempt.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    code: Mapped[str] = mapped_column(Text)
+    verdict: Mapped[CodeVerdict] = mapped_column(_enum(CodeVerdict))
+    tests_total: Mapped[int]
+    tests_passed: Mapped[int]
+    failed_test: Mapped[int | None] = mapped_column(Integer)
+    stdout: Mapped[str] = mapped_column(Text)
+    stderr: Mapped[str] = mapped_column(Text)
+    exit_code: Mapped[int | None] = mapped_column(Integer)
+    duration_seconds: Mapped[float] = mapped_column(Float)

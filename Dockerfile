@@ -22,8 +22,12 @@ COPY config ./config
 COPY content ./content
 RUN uv sync --locked --no-dev
 
+# ege — сайт; ege-runner — песочница для программ (ADR-0014), отдельный пользователь
+# в той же группе: общий у них только сокет в /run/ege-runner.
 RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin ege \
-    && mkdir /data && chown ege:ege /data
+    && useradd --uid 10002 --gid ege --no-create-home --shell /usr/sbin/nologin ege-runner \
+    && mkdir /data && chown ege:ege /data \
+    && mkdir /run/ege-runner && chown ege:ege /run/ege-runner && chmod 2770 /run/ege-runner
 USER ege
 
 ENV PATH=/opt/venv/bin:$PATH \

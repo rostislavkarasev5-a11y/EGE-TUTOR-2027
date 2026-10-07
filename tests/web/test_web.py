@@ -427,3 +427,90 @@ def test_changing_password_ends_old_sessions(client, store):
     response = client.get("/", follow_redirects=False)
     assert response.status_code == 303
     assert client.get("/login").status_code == 200  # без зацикливания
+
+
+# ── программы на Python (Phase 3) ───────────────────────────────────────────
+
+
+@pytest.fixture
+def site_with(fixed_clock):
+    """Сайт с выбранной песочницей; вход уже выполнен."""
+    from ege_tutor.core.app import TutorApp
+
+    created = []
+
+    def _make(sandbox):
+        tutor = TutorApp.create(clock=fixed_clock, sandbox=sandbox)
+        created.append(tutor)
+        passwords = PasswordStore(web_dir(tutor.settings.data_dir) / "password.argon2")
+        passwords.set(PASSWORD)
+        app = create_app(tutor, password_store=passwords)
+        client = TestClient(app, base_url="https://testserver")
+        page = client.get("/login")
+        client.post("/login", data={"csrf": _csrf(page.text), "password": PASSWORD, "next": "/"})
+        return client, tutor
+
+    yield _make
+    for tutor in created:
+        tutor.close()
+
+
+@pytest.fixture
+def code_client(site_with):
+    """Песочница-заменитель (обычный Python): работает и на Windows."""
+    from tests.fakes import LocalSandbox
+
+    return site_with(LocalSandbox())
+
+
+def test_run_program_on_attempt_page(code_client):
+    client, tutor = code_client
+    _import_sample(client)
+    _review_all(client)
+    task = next(t for t in tutor.tasks() if t.exam_item == 17)
+    attempt_id = _start(client, task.id)
+    page = client.get(f"/attempts/{attempt_id}")
+    assert "Запустить программу" in page.text
+    assert "2 тест(ов)" in page.text
+
+    wrong = post(client, f"/attempts/{attempt_id}/run", {"code": "print('<b>0</b>')"})
+    assert "Неверный вывод на тесте" in wrong.text
+    assert "Не прошёл тест №1" in wrong.text
+    assert "&lt;b&gt;0&lt;/b&gt;" in wrong.text  # вывод программы не становится HTML
+
+    code = (
+        "a = [int(x) for x in open('numbers.txt')]\n"
+        "print(sum((x < 0) != (y < 0) for x, y in zip(a, a[1:])))\n"
+    )
+    good = post(client, f"/attempts/{attempt_id}/run", {"code": code})
+    assert "Программа отработала" in good.text
+    assert "тесты 2 из 2" in good.text
+    assert "Отправить ответ 3" in good.text
+    assert "zip(a, a[1:])" in good.text  # последняя программа остаётся в поле
+
+    answered = post(client, f"/attempts/{attempt_id}/answer", {"answer": "3"})
+    assert "Итог: верно" in answered.text
+    assert len(tutor.code_runs(task.id)) == 2
+
+
+def test_program_box_only_for_informatics_and_errors(code_client):
+    client, tutor = code_client
+    _import_sample(client)
+    _review_all(client)
+    math_task = next(t for t in tutor.tasks() if t.subject.value == "MATH_PROFILE")
+    attempt_id = _start(client, math_task.id)
+    assert "Запустить программу" not in client.get(f"/attempts/{attempt_id}").text
+    refused = post(client, f"/attempts/{attempt_id}/run", {"code": "print(1)"})
+    assert "только в задачах по информатике" in refused.text
+
+
+def test_program_box_explains_missing_sandbox(site_with):
+    from ege_tutor.sandbox import UnavailableSandbox
+
+    client, tutor = site_with(UnavailableSandbox("нет Docker"))
+    _import_sample(client)
+    _review_all(client)
+    task = next(t for t in tutor.tasks() if t.exam_item == 17)
+    page = client.get(f"/attempts/{_start(client, task.id)}")
+    assert "Песочница для программ не настроена" in page.text
+    assert "Запустить программу" not in page.text

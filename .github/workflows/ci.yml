@@ -81,6 +81,44 @@ jobs:
       - name: Build image
         run: docker build -t ege-tutor:ci .
 
+      - name: Sandbox selftest in isolated container
+        # Те же ограничения, что у сервиса runner в deploy/docker-compose.yml (ADR-0014).
+        run: |
+          docker run --rm --network none --read-only --tmpfs /tmp:size=128m,mode=1777 \
+            --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
+            --memory 512m --memory-swap 512m --cpus 1 --user 10002:10001 \
+            ege-tutor:ci ege-runner selftest
+
+      - name: Sandbox via socket (server) and docker run -i (Windows)
+        run: |
+          docker volume create ege-runner-ci
+          docker run -d --name runner --network none --read-only \
+            --tmpfs /tmp:size=128m,mode=1777 --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 128 --memory 512m --memory-swap 512m \
+            --user 10002:10001 -v ege-runner-ci:/run/ege-runner \
+            ege-tutor:ci ege-runner serve --socket /run/ege-runner/runner.sock
+          for i in $(seq 1 20); do
+            if docker exec runner ege-runner ping --socket /run/ege-runner/runner.sock; then break; fi
+            sleep 1
+          done
+          docker run --rm -v ege-runner-ci:/run/ege-runner \
+            -e EGE_RUNNER_SOCKET=/run/ege-runner/runner.sock ege-tutor:ci sh -ec '
+              ege import content/sample/tasks.yaml --apply > /dev/null
+              printf "%s\n" "a = [int(x) for x in open(\"numbers.txt\")]" \
+                "print(sum((x < 0) != (y < 0) for x, y in zip(a, a[1:])))" > /tmp/solution.py
+              id=$(python -c "from ege_tutor.core.app import TutorApp; print(next(t.id for t in TutorApp.create().tasks() if t.exam_item == 17))")
+              ege run "$id" /tmp/solution.py | tee /tmp/out
+              grep -q "Похоже, ответ: 3" /tmp/out'
+          printf '%s' '{"code": "print(6 * 7)", "limits": {"time_limit_seconds": 5, "memory_limit_mb": 128}}' \
+            | docker run --rm -i --network none --read-only --tmpfs /tmp:rw,size=64m \
+                --cap-drop ALL --security-opt no-new-privileges --pids-limit 128 \
+                ege-tutor:ci ege-runner once | tee /tmp/once.json
+          grep -qF '"stdout": "42\n"' /tmp/once.json
+
+      - name: Runner logs
+        if: always()
+        run: docker logs runner || true
+
       - name: Run site in container
         run: |
           docker run -d --name ege -p 8000:8000 ege-tutor:ci sh -c \

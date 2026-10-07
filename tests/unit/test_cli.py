@@ -7,6 +7,8 @@ import sys
 import pytest
 from typer.testing import CliRunner
 
+from ege_tutor.core.app import TutorApp
+from ege_tutor.core.domain import Subject
 from ege_tutor.interfaces.cli.main import app
 from tests.conftest import REPO_ROOT
 
@@ -206,3 +208,55 @@ def test_review_skip_ends_with_message():
     result = runner.invoke(app, ["review"], input="пропустить\n")
     assert result.exit_code == 0, result.output
     assert "пропущена" in result.output
+
+
+def test_run_program_through_runner(tmp_path, monkeypatch):
+    """ege run: настоящий runner на Unix-сокете, задача-пример с тестами (Phase 3)."""
+    import socket
+    import threading
+    import time
+
+    from ege_tutor.sandbox import RUNNER_SOCKET_ENV
+    from ege_tutor.sandbox import runner as sandbox_runner
+
+    if not sys.platform.startswith("linux") or not hasattr(socket, "AF_UNIX"):
+        pytest.skip("песочница работает только на Linux")
+    sock = tmp_path / "runner.sock"
+    threading.Thread(
+        target=lambda: CliRunner().invoke(sandbox_runner.app, ["serve", "--socket", str(sock)]),
+        daemon=True,
+    ).start()
+    for _ in range(100):
+        if sock.exists():
+            break
+        time.sleep(0.05)
+    monkeypatch.setenv(RUNNER_SOCKET_ENV, str(sock))
+
+    assert invoke("import", SAMPLE, "--apply").exit_code == 0
+    tutor = TutorApp.create()
+    task = next(t for t in tutor.tasks() if t.exam_item == 17)
+    math_task = next(t for t in tutor.tasks() if t.subject == Subject.MATH_PROFILE)
+    tutor.close()
+    assert len(task.tests) == 2
+
+    program = tmp_path / "solution.py"
+    program.write_text(
+        "a = [int(x) for x in open('numbers.txt')]\n"
+        "print(sum((x < 0) != (y < 0) for x, y in zip(a, a[1:])))\n",
+        encoding="utf-8",
+    )
+    result = invoke("run", str(task.id), str(program))
+    assert result.exit_code == 0, result.output
+    assert "программа отработала" in result.output
+    assert "2 из 2" in result.output
+    assert "Похоже, ответ: 3" in result.output
+
+    program.write_text("print(0)\n", encoding="utf-8")
+    result = invoke("run", str(task.id), str(program))
+    assert "неверный вывод" in result.output
+    assert "Не прошёл тест №1" in result.output
+
+    history = invoke("runs", "--task", str(task.id))
+    assert history.exit_code == 0
+    assert "2 из 2" in history.output
+    assert invoke("run", str(math_task.id), str(program)).exit_code == 1

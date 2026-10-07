@@ -348,12 +348,12 @@ EGE-TUTOR-2027/
 │   │   └── informatics/       INFORMATICS TUTOR: задачи с кодом, тест-кейсы
 │   ├── db/                    (Phase 1) SQLAlchemy-модели, репозитории, миграции Alembic
 │   ├── ai/                    DisabledAIService; (Phase 6) клиент Claude, промпты, схемы
-│   ├── sandbox/               UnavailableSandbox; (Phase 3) Docker, WSL2/Linux-native
+│   ├── sandbox/               движок Linux-native, ege-runner, клиенты: сокет runner, Docker; WSL2 — позже
 │   └── interfaces/
 │       ├── cli/               команды Typer
 │       └── web/               (Phase 12, ADR-0013) FastAPI: страницы, вход, загрузки
 ├── tests/
-│   ├── smoke/  unit/  integration/   (дальше: sandbox/, content/)
+│   ├── smoke/  unit/  integration/   sandbox/  web/
 ├── .github/workflows/ci.yml   CI: uv, проверка секретов, ruff, pytest (Linux + Windows)
 ├── deploy/                    сервер: docker-compose, Caddy, установка, автообновление, бэкапы
 ├── Dockerfile                 образ сайта (данные — в томе /data, не в образе)
@@ -474,3 +474,11 @@ CORE ──(вызов порта AIService)──► AIService
 - Отдельный набор тестов sandbox: бесконечный цикл, выделение 10 ГБ, `os.fork` в цикле, `socket.connect`, запись в `/etc` и в домашнюю папку — все должны быть остановлены.
 
 **Решение для Windows (ADR-0008):** основной вариант — **Docker Desktop**, запасной — **WSL2** (программа работает внутри Linux на Windows, изоляция Linux-native). На Linux доступны оба движка. Sandbox реализуется **только в Phase 3**; до этого порт `Sandbox` честно сообщает, что недоступен.
+
+**Как сделано в Phase 3 (ADR-0014):**
+
+- `sandbox/engine.py` — движок Linux-native: временная папка, `python -I`, чистое окружение, `RLIMIT_CPU/AS/NPROC/FSIZE`, таймер по реальному времени с убийством всей группы процессов. Сеть выключает окружение (контейнер без сети).
+- `sandbox/runner.py` — команда `ege-runner` внутри контейнера: `serve` (Unix-сокет), `once` (stdin → stdout), `selftest` («злые» программы), `ping`.
+- Реализации порта: `RunnerSocketSandbox` — сервер, контейнер `runner` без сети, связь через сокет в общем томе; `DockerSandbox` — компьютер, `docker run --rm -i --network none --read-only --cap-drop ALL ...` из того же образа; `UnavailableSandbox` — честно сообщает причину (WSL2 пока не реализован). Выбор — `make_sandbox`: переменная `EGE_RUNNER_SOCKET`, иначе `backend` из `config/app.toml`.
+- `CORE: CodeService` — только задачи информатики; сначала тест-кейсы задачи (`task_test_case`: stdin и/или короткие версии файлов задачи → ожидаемый вывод, сравнение без учёта пробелов), потом запуск на настоящих файлах; последняя непустая строка вывода предлагается как ответ. Каждый запуск записывается в `code_run` и не удаляется. Ответ отправляет пользователь — Sandbox ничего не решает за CORE.
+- Подача вердиктов в классификатор ошибок — Phase 4.

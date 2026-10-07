@@ -94,3 +94,23 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line
 .scroll { overflow-x: auto; }
 ul.plain { padding-left: 18px; }
 code { background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+
+/* программа на Python (Phase 3) */
+.code-box { margin-top: 20px; }
+textarea.code {
+  width: 100%; box-sizing: border-box; margin-bottom: 8px;
+  font: 14px/1.4 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  tab-size: 4; white-space: pre; overflow-wrap: normal; overflow-x: auto;
+}
+pre.output {
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto;
+  padding: 8px; border-radius: 6px; background: rgba(127, 127, 127, 0.12);
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+pre.output.error { color: var(--bad); }
+details.run { margin: 8px 0; }
+details.run summary { cursor: pointer; }
+.run-ok { color: var(--ok); font-weight: 600; }
+.run-wrong_answer, .run-time_limit, .run-memory_limit, .run-runtime_error, .run-syntax_error {
+  color: var(--bad); font-weight: 600;
+}

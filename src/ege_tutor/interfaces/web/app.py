@@ -16,14 +16,17 @@ from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
 from ege_tutor import __version__
 from ege_tutor.core.app import AppError, TutorApp
 from ege_tutor.core.domain import (
+    CODE_VERDICT_LABELS,
     SOURCE_LABELS,
     AnswerType,
     AttemptStatus,
+    CodeVerdict,
     ImportBatchStatus,
     Subject,
     Task,
@@ -194,6 +197,10 @@ def create_app(
         TaskSource=TaskSource,
         ImportBatchStatus=ImportBatchStatus,
         AttemptStatus=AttemptStatus,
+        CODE_VERDICT_LABELS=CODE_VERDICT_LABELS,
+        CodeVerdict=CodeVerdict,
+        time_limit=f"{tutor.settings.app.sandbox.time_limit_seconds:g}",
+        memory_limit=tutor.settings.app.sandbox.memory_limit_mb,
         version=__version__,
     )
     templates.env.filters.update(minutes=minutes, display_answer=display_answer, utc_time=utc_time)
@@ -443,9 +450,17 @@ def create_app(
             return redirect("/")
         notes = request.session.get("result_notes", {})
         subject, item = request.session.get("solve_filter", ["", ""])
+        runs = []
+        code_enabled = task.subject == Subject.INFORMATICS
+        if code_enabled:
+            runs = core.code_runs(task.id, attempt_id, limit=5)
         return render(
             request,
             "attempt.html",
+            code_enabled=code_enabled,
+            sandbox_ready=code_enabled and core.sandbox.is_available,
+            runs=runs,
+            last_code=runs[0].code if runs else "",
             attempt=attempt,
             task=task,
             hints=hints,
@@ -470,6 +485,18 @@ def create_app(
         notes[str(attempt_id)] = result.check.explanation
         request.session["result_notes"] = notes
         return redirect(f"/attempts/{attempt_id}")
+
+    @app.post("/attempts/{attempt_id}/run")
+    async def run_code(request: Request, attempt_id: int, code: Annotated[str, Form()] = ""):
+        """Запустить программу к задаче. Может занять несколько секунд — не держим сервер."""
+        require_login(request)
+        await check_csrf(request)
+        try:
+            attempt = core.attempt(attempt_id)
+            await run_in_threadpool(core.run_code, attempt.task_id, code, attempt_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+        return redirect(f"/attempts/{attempt_id}#code")
 
     @app.post("/attempts/{attempt_id}/hint")
     async def hint(request: Request, attempt_id: int):

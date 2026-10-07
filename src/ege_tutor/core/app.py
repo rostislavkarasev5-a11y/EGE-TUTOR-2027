@@ -17,6 +17,7 @@ from ege_tutor.core.domain import (
     Attempt,
     AttemptMode,
     Catalog,
+    CodeRun,
     ExamSpec,
     ImportBatch,
     ImportReport,
@@ -30,12 +31,13 @@ from ege_tutor.core.domain import (
 from ege_tutor.core.errors import AppError
 from ege_tutor.core.ports import AIService, Clock, Repository, RepositoryError, Sandbox
 from ege_tutor.core.services.catalog import load_catalog
+from ege_tutor.core.services.code import CodeService
 from ege_tutor.core.services.content_import import build_report
 from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
-from ege_tutor.sandbox import UnavailableSandbox
+from ege_tutor.sandbox import make_sandbox
 from ege_tutor.subjects import tutor_for
 
-CURRENT_PHASE = 2
+CURRENT_PHASE = 3
 DB_FILE_NAME = "ege.db"
 BACKUP_PREFIX = "ege-"
 DEFAULT_BACKUPS_KEPT = 14
@@ -85,6 +87,7 @@ class TutorApp:
         self.practice = PracticeService(
             repository, clock, settings.mastery, tutor_for, self._time_norm
         )
+        self.code = CodeService(repository, clock, sandbox, settings.app.sandbox, self.asset_path)
 
     @classmethod
     def create(
@@ -92,6 +95,7 @@ class TutorApp:
         settings: Settings | None = None,
         clock: Clock | None = None,
         repository: Repository | None = None,
+        sandbox: Sandbox | None = None,
     ) -> "TutorApp":
         """Собрать приложение с реализациями по умолчанию для текущей фазы.
 
@@ -109,7 +113,7 @@ class TutorApp:
             settings=settings,
             clock=clock or SystemClock(),
             ai=DisabledAIService(),
-            sandbox=UnavailableSandbox(),
+            sandbox=sandbox or make_sandbox(settings.app.sandbox),
             repository=repository,
             catalog=catalog,
         )
@@ -323,3 +327,20 @@ class TutorApp:
     def why_not_practicable(self, task: Task) -> str | None:
         """Почему задачу нельзя решать, или None, если можно."""
         return self.practice.why_not_practicable(task)
+
+    # ── программы на Python (Phase 3) ───────────────────────────────────────
+
+    def run_code(self, task_id: int, code: str, attempt_id: int | None = None) -> CodeRun:
+        """Проверить программу на тестах задачи в песочнице и записать запуск."""
+        return self.code.run(task_id, code, attempt_id)
+
+    def code_runs(
+        self, task_id: int | None = None, attempt_id: int | None = None, limit: int = 20
+    ) -> list[CodeRun]:
+        return self.code.runs(task_id, attempt_id, limit)
+
+    def code_run(self, run_id: int) -> CodeRun:
+        run = self.repository.get_code_run(run_id)
+        if run is None:
+            raise AppError(f"запуск №{run_id} не найден")
+        return run
