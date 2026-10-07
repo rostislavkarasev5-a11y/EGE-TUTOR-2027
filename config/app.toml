@@ -1,0 +1,31 @@
+# Основные настройки EGE-TUTOR-2027.
+# Здесь только безопасные значения по умолчанию. Личные данные и ключи сюда не пишутся (ADR-0004).
+
+[app]
+name = "EGE-TUTOR-2027"
+# Папка с локальными данными пользователя (база, бэкапы, личный контент). Закрыта .gitignore.
+data_dir = "data"
+
+# Даты экзаменов. Пока официального расписания нет, status = "TBD" и date не задаётся (ADR-0005).
+# После публикации официального расписания:
+#   status = "OFFICIAL"
+#   date = 2027-06-XX
+#   source = "ссылка на официальный документ"
+[exams.MATH_PROFILE]
+status = "TBD"
+
+[exams.INFORMATICS]
+status = "TBD"
+
+[ai]
+# AI Layer появится в Phase 6. До этого ИИ выключен, приложение работает без Claude API.
+enabled = false
+
+[sandbox]
+# Python Sandbox появится в Phase 3 (ADR-0008).
+# Основной вариант на Windows — Docker Desktop, запасной — WSL2.
+backend = "docker"
+fallback_backend = "wsl2"
+time_limit_seconds = 10
+memory_limit_mb = 256
+network_enabled = false

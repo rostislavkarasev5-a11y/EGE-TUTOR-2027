@@ -1,0 +1,49 @@
+# Mastery v0 — СТАРТОВАЯ ЭКСПЕРИМЕНТАЛЬНАЯ модель, а не окончательная истина (ADR-0006).
+# Сама модель реализуется в Phase 4. Здесь — конфигурируемые коэффициенты.
+#
+# Свидетельство попытки (всегда в диапазоне 0..1):
+#   e = correctness × independence × time_factor × repeat_factor
+# Вес свидетельства (сложность влияет на вес, а не на e):
+#   w = difficulty_weight × mode_weight
+
+model_version = "v0"
+
+[independence]
+# Коэффициент самостоятельности по максимальному уровню подсказки (0 = без подсказок).
+# Уровень 5 («похожая задача») — это новая попытка на другой задаче, поэтому здесь его нет.
+level_0 = 1.0
+level_1 = 0.75
+level_2 = 0.5
+level_3 = 0.25
+level_4 = 0.0
+
+[time_factor]
+within_norm = 1.0     # уложился в норматив
+up_to_double = 0.85   # до 2× норматива
+over_double = 0.7     # дольше 2× норматива
+
+[repeat_factor]
+first = 1.0
+second = 0.7
+third_or_later = 0.5
+
+[difficulty_weight]
+# Сложность задачи 1..5.
+d1 = 0.5
+d2 = 0.75
+d3 = 1.0
+d4 = 1.25
+d5 = 1.5
+
+[mode_weight]
+practice = 1.0
+homework = 1.0
+review = 1.0
+control = 1.5
+diagnostic = 1.5
+mock = 2.0
+exam = 2.0
+
+[forgetting]
+initial_stability_days = 3.0
+review_threshold = 0.7
