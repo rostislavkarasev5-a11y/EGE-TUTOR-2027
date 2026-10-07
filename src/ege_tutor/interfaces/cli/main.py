@@ -592,6 +592,20 @@ def solve(
         current = following
 
 
+STOP_WORDS = {"стоп", "stop", "выход", "q"}
+SKIP_WORDS = {"пропустить", "пропуск", "п", "skip", "s"}
+
+
+def _ask_review_choice() -> str:
+    """Спросить «Ответ верный?» и переспрашивать, пока не введут понятный ответ."""
+    allowed = YES_WORDS | NO_WORDS | STOP_WORDS | SKIP_WORDS
+    while True:
+        choice = typer.prompt("Ответ верный", prompt_suffix="? ").strip().casefold()
+        if choice in allowed:
+            return choice
+        console.print("[yellow]Не понял ответ. Напиши: да, нет, пропустить или стоп.[/]")
+
+
 @app.command()
 def review(
     task_id: Annotated[int | None, typer.Argument(help="ID задачи (необязательно).")] = None,
@@ -621,19 +635,20 @@ def review(
             "да — можно решать; нет — задача станет спорной и не будет выдаваться; "
             "пропустить; стоп.[/]"
         )
-        choice = typer.prompt("Ответ верный", prompt_suffix="? ").strip().casefold()
+        choice = _ask_review_choice()
         if choice in YES_WORDS:
             tutor.review_task(t.id, answer_is_correct=True)
             console.print(f"[green]Задача {t.id} проверена.[/]")
         elif choice in NO_WORDS:
             tutor.review_task(t.id, answer_is_correct=False)
             console.print(f"[yellow]Задача {t.id} помечена как спорная.[/]")
-        elif choice in {"стоп", "stop", "выход", "q"}:
+        elif choice in STOP_WORDS:
             return
         if task_id is not None:
             return
-        if choice not in YES_WORDS | NO_WORDS:
-            return  # «пропустить»: эта же задача выпала бы снова
+        if choice in SKIP_WORDS:
+            console.print("Задача пропущена, проверка закончена.")
+            return  # эта же задача выпала бы снова
 
 
 @app.command()
