@@ -1,0 +1,126 @@
+# Каталог тем и навыков: профильная математика.
+# Тема привязана к номерам заданий ЕГЭ (exam_items). Навык наследует номера темы,
+# если не указаны свои. requires — навыки-предпосылки (коды).
+subject: MATH_PROFILE
+topics:
+  - code: M01
+    title: Планиметрия
+    exam_items: [1]
+    skills:
+      - {code: M01.triangles, title: "Треугольники: углы, стороны, подобие, теорема Пифагора"}
+      - {code: M01.quadrilaterals, title: "Четырёхугольники: параллелограмм, трапеция, ромб"}
+      - {code: M01.circle, title: "Окружность: вписанные и центральные углы, касательные"}
+      - {code: M01.area, title: "Площади плоских фигур"}
+  - code: M02
+    title: Векторы
+    exam_items: [2]
+    skills:
+      - {code: M02.coordinates, title: "Координаты, длина и сумма векторов"}
+      - {code: M02.dot_product, title: "Скалярное произведение и угол между векторами"}
+  - code: M03
+    title: Стереометрия
+    exam_items: [3]
+    skills:
+      - {code: M03.polyhedra, title: "Многогранники: объём и площадь поверхности"}
+      - {code: M03.solids_of_revolution, title: "Цилиндр, конус, шар"}
+  - code: M04
+    title: Начала теории вероятностей
+    exam_items: [4]
+    skills:
+      - {code: M04.classical, title: "Классическое определение вероятности"}
+  - code: M05
+    title: Вероятности сложных событий
+    exam_items: [5]
+    skills:
+      - {code: M05.sum_product, title: "Сложение и умножение вероятностей", requires: [M04.classical]}
+      - {code: M05.conditional, title: "Условная вероятность и формула полной вероятности", requires: [M05.sum_product]}
+  - code: M06
+    title: Простейшие уравнения
+    exam_items: [6]
+    skills:
+      - {code: M06.algebraic, title: "Линейные, квадратные и дробно-рациональные уравнения"}
+      - {code: M06.irrational, title: "Иррациональные уравнения"}
+      - {code: M06.exponential, title: "Показательные уравнения"}
+      - {code: M06.logarithmic, title: "Логарифмические уравнения", requires: [M07.logarithms]}
+      - {code: M06.trig_simple, title: "Простейшие тригонометрические уравнения", requires: [M07.trig]}
+  - code: M07
+    title: Вычисления и преобразования
+    exam_items: [7]
+    skills:
+      - {code: M07.powers_roots, title: "Степени и корни"}
+      - {code: M07.logarithms, title: "Логарифмические выражения"}
+      - {code: M07.trig, title: "Тригонометрические выражения"}
+  - code: M08
+    title: Производная и первообразная
+    exam_items: [8]
+    skills:
+      - {code: M08.derivative_meaning, title: "Геометрический и физический смысл производной"}
+      - {code: M08.derivative_graph, title: "Связь графика функции и графика производной"}
+      - {code: M08.antiderivative, title: "Первообразная и площадь под графиком"}
+  - code: M09
+    title: Задачи с прикладным содержанием
+    exam_items: [9]
+    skills:
+      - {code: M09.formula, title: "Вычисления по формуле из условия"}
+  - code: M10
+    title: Текстовые задачи
+    exam_items: [10]
+    skills:
+      - {code: M10.motion, title: "Задачи на движение"}
+      - {code: M10.work, title: "Задачи на совместную работу"}
+      - {code: M10.percent_mixtures, title: "Проценты, смеси и сплавы"}
+      - {code: M10.progressions, title: "Арифметическая и геометрическая прогрессии"}
+  - code: M11
+    title: Графики функций
+    exam_items: [11]
+    skills:
+      - {code: M11.read_graphs, title: "Чтение графиков и коэффициенты элементарных функций"}
+  - code: M12
+    title: Наибольшее и наименьшее значение функции
+    exam_items: [12]
+    skills:
+      - {code: M12.extrema, title: "Исследование функции с помощью производной", requires: [M08.derivative_meaning]}
+  - code: M13
+    title: Уравнения (развёрнутый ответ)
+    exam_items: [13]
+    skills:
+      - {code: M13.trig_equations, title: "Тригонометрические уравнения", requires: [M06.trig_simple]}
+      - {code: M13.root_selection, title: "Отбор корней на промежутке"}
+      - {code: M13.exp_log_equations, title: "Показательные и логарифмические уравнения", requires: [M06.exponential, M06.logarithmic]}
+  - code: M14
+    title: Стереометрическая задача
+    exam_items: [14]
+    skills:
+      - {code: M14.proof, title: "Доказательство в стереометрии"}
+      - {code: M14.angles_distances, title: "Углы и расстояния в пространстве"}
+      - {code: M14.sections, title: "Построение сечений"}
+  - code: M15
+    title: Неравенства
+    exam_items: [15]
+    skills:
+      - {code: M15.intervals, title: "Метод интервалов"}
+      - {code: M15.exp_log_inequalities, title: "Показательные и логарифмические неравенства", requires: [M15.intervals]}
+  - code: M16
+    title: Экономическая задача
+    exam_items: [16]
+    skills:
+      - {code: M16.loans, title: "Кредиты: дифференцированные и аннуитетные платежи", requires: [M10.percent_mixtures]}
+      - {code: M16.optimization, title: "Вклады и оптимизация"}
+  - code: M17
+    title: Планиметрическая задача
+    exam_items: [17]
+    skills:
+      - {code: M17.proof, title: "Доказательство в планиметрии"}
+      - {code: M17.computation, title: "Вычисление элементов фигур"}
+  - code: M18
+    title: Задача с параметром
+    exam_items: [18]
+    skills:
+      - {code: M18.graphical, title: "Графический метод"}
+      - {code: M18.analytical, title: "Аналитический метод"}
+  - code: M19
+    title: Числа и их свойства
+    exam_items: [19]
+    skills:
+      - {code: M19.divisibility, title: "Делимость и целые числа"}
+      - {code: M19.estimate_example, title: "Оценка и пример"}

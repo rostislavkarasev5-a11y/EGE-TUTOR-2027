@@ -1,4 +1,5 @@
 * text=auto eol=lf
-*.bat text eol=crlf
+# .bat хранятся в репозитории с CRLF: файл, скачанный с GitHub по ссылке Raw, тоже должен работать.
+*.bat -text
 *.cmd text eol=crlf
 *.ps1 text eol=crlf

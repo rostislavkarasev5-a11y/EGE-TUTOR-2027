@@ -46,3 +46,18 @@ jobs:
 
       - name: CLI smoke
         run: uv run ege --version
+
+      - name: CLI import smoke
+        env:
+          EGE_TUTOR_DATA_DIR: ${{ runner.temp }}/ege-data-smoke
+        run: |
+          uv run ege import content/sample/tasks.yaml --apply
+          uv run ege tasks --source AI_GENERATED
+
+      - name: install.bat (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        env:
+          EGE_NONINTERACTIVE: "1"
+          EGE_TUTOR_DATA_DIR: ${{ runner.temp }}\ege-data-install
+        run: call install.bat
