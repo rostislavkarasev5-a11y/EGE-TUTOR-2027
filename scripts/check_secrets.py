@@ -103,4 +103,6 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
+    # В Windows CI вывод идёт в pipe с кодировкой cp1252, где нет кириллицы.
+    sys.stdout.reconfigure(encoding="utf-8")
     sys.exit(main(sys.argv[1:]))

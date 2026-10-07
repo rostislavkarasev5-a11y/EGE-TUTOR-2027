@@ -1,7 +1,9 @@
 """Защита публичного репозитория (ADR-0004): .gitignore и scripts/check_secrets.py."""
 
 import importlib.util
+import os
 import subprocess
+import sys
 
 import pytest
 
@@ -91,3 +93,15 @@ def test_checker_allows_placeholders(text):
 def test_tracked_files_are_clean():
     files = check_secrets.tracked_files(REPO_ROOT)
     assert check_secrets.check(REPO_ROOT, files) == []
+
+
+def test_checker_runs_with_non_utf8_console():
+    """В Windows CI stdout — pipe в cp1252; русский вывод не должен ронять проверку."""
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "scripts" / "check_secrets.py")],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PYTHONIOENCODING": "cp1252"},
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
