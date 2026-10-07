@@ -190,3 +190,19 @@ def test_review_no_marks_task_disputed():
     result = runner.invoke(app, ["review", "1"], input="нет\n")
     assert result.exit_code == 0, result.output
     assert "спорная" in invoke("tasks").output
+
+
+def test_review_asks_again_on_unknown_input():
+    # Пользователь по ошибке ввёл команду вместо ответа — проверка не должна молча закончиться.
+    invoke("import", SAMPLE, "--apply")
+    result = runner.invoke(app, ["review", "1"], input="ege solve\nда\n")
+    assert result.exit_code == 0, result.output
+    assert "Не понял ответ" in result.output
+    assert "Задача 1 проверена" in result.output
+
+
+def test_review_skip_ends_with_message():
+    invoke("import", SAMPLE, "--apply")
+    result = runner.invoke(app, ["review"], input="пропустить\n")
+    assert result.exit_code == 0, result.output
+    assert "пропущена" in result.output
