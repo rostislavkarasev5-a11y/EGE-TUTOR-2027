@@ -27,6 +27,7 @@ from ege_tutor.core.domain import (
     TaskDraft,
     TaskHint,
     TaskSource,
+    TaskTestCase,
     VerificationStatus,
 )
 
@@ -46,11 +47,14 @@ KNOWN_FIELDS = {
     "skills",
     "assets",
     "hints",
+    "tests",
 }
 # При импорте можно указать только эти статусы. AUTO_CHECKED ставит сама система
 # после автоматической проверки, DISPUTED/REJECTED — при разборе ошибок в задачах.
 IMPORTABLE_STATUSES = {VerificationStatus.UNVERIFIED, VerificationStatus.REVIEWED}
 MAX_ASSET_BYTES = 50 * 1024 * 1024
+MAX_TESTS = 50
+MAX_TEST_BYTES = 1_000_000
 
 
 class ImportFileError(Exception):
@@ -211,6 +215,62 @@ def _parse_hints(value: Any, answer: str | None, check: _RowChecker) -> tuple[Ta
     return tuple(sorted(hints, key=lambda h: h.level))
 
 
+def _parse_test_files(value: Any, position: int, check: _RowChecker) -> tuple | None:
+    if value is None:
+        return ()
+    if not isinstance(value, dict):
+        check.error(f"tests: в тесте {position} files — это словарь {{имя файла: содержимое}}")
+        return None
+    files = []
+    for name, content in value.items():
+        name = str(name).strip()
+        if not name or "/" in name or "\\" in name or name in {".", ".."}:
+            check.error(f"tests: в тесте {position} недопустимое имя файла «{name}»")
+            return None
+        files.append((name, "" if content is None else str(content)))
+    return tuple(files)
+
+
+def _parse_tests(
+    value: Any, subject: Subject | None, check: _RowChecker
+) -> tuple[TaskTestCase, ...]:
+    """Тест-кейсы для программы: список {input, files, output}. Информатика, только YAML."""
+    if value is None or value == "" or value == []:
+        return ()
+    if subject is not None and subject != Subject.INFORMATICS:
+        check.error("tests: тест-кейсы бывают только у задач по информатике")
+        return ()
+    if not isinstance(value, list):
+        check.error("tests: нужен список вида [{input: ..., output: ...}] (только в YAML)")
+        return ()
+    if len(value) > MAX_TESTS:
+        check.error(f"tests: не больше {MAX_TESTS} тест-кейсов")
+        return ()
+    tests = []
+    for position, item in enumerate(value, start=1):
+        if not isinstance(item, dict) or "output" not in item:
+            check.error(f"tests: в тесте {position} нужно поле output (и input или files)")
+            return ()
+        unknown = set(item) - {"input", "output", "files"}
+        if unknown:
+            check.error(f"tests: в тесте {position} неизвестные поля {', '.join(sorted(unknown))}")
+            return ()
+        files = _parse_test_files(item.get("files"), position, check)
+        if files is None:
+            return ()
+        test_input = "" if item.get("input") is None else str(item["input"])
+        test_output = "" if item["output"] is None else str(item["output"])
+        if not test_output.strip():
+            check.error(f"tests: в тесте {position} пустой output")
+            return ()
+        size = len((test_input + test_output + "".join(c for _, c in files)).encode("utf-8"))
+        if size > MAX_TEST_BYTES:
+            check.error(f"tests: тест {position} больше 1 МБ")
+            return ()
+        tests.append(TaskTestCase(position, test_input, test_output, files))
+    return tuple(tests)
+
+
 def _validate_record(
     record: dict[str, Any],
     check: _RowChecker,
@@ -345,6 +405,7 @@ def _validate_record(
             asset_paths.append(str(path))
 
     hints = _parse_hints(record.get("hints"), answer, check)
+    tests = _parse_tests(record.get("tests"), subject, check)
 
     if not check.ok or subject is None or exam_item is None:
         return None
@@ -367,6 +428,7 @@ def _validate_record(
         asset_paths=tuple(asset_paths),
         content_hash=content_hash(subject, exam_item, statement),
         hints=hints,
+        tests=tests,
     )
 
 

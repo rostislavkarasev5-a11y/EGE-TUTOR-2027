@@ -74,3 +74,9 @@ tasks:
     time_norm_minutes: 8
     skills: [I17.sequences, I00.files]
     assets: [files/numbers.txt]
+    # Тесты для программы: короткие файлы с известным ответом (Phase 3).
+    tests:
+      - files: {numbers.txt: "1\n-2\n3\n"}
+        output: 2
+      - files: {numbers.txt: "-1\n-2\n5\n6\n"}
+        output: 1

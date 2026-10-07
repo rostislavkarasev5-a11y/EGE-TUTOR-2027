@@ -1,6 +1,6 @@
 [project]
 name = "ege-tutor"
-version = "0.3.0"
+version = "0.4.0"
 description = "EGE-TUTOR-2027: персональная система подготовки к ЕГЭ по профильной математике и информатике"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -26,6 +26,7 @@ dependencies = [
 [project.scripts]
 ege = "ege_tutor.interfaces.cli.main:run"
 ege-web = "ege_tutor.interfaces.web.cli:run"
+ege-runner = "ege_tutor.sandbox.runner:run"
 
 [dependency-groups]
 dev = [

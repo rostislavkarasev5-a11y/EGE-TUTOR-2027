@@ -16,6 +16,8 @@ from ege_tutor.core.domain import (
     AttemptMode,
     AttemptStatus,
     Catalog,
+    CodeRun,
+    CodeVerdict,
     ExamSpec,
     ExamSpecItem,
     HintEvent,
@@ -29,6 +31,7 @@ from ege_tutor.core.domain import (
     TaskDraft,
     TaskHint,
     TaskSource,
+    TaskTestCase,
     Topic,
     Verdict,
     VerificationStatus,
@@ -37,6 +40,7 @@ from ege_tutor.core.ports.repository import RepositoryError
 from ege_tutor.db.engine import is_migrated, make_engine, upgrade_to_head
 from ege_tutor.db.models import (
     AttemptRow,
+    CodeRunRow,
     ExamSpecItemRow,
     ExamSpecRow,
     HintEventRow,
@@ -51,6 +55,7 @@ from ege_tutor.db.models import (
     TaskHintRow,
     TaskRow,
     TaskSkillRow,
+    TaskTestCaseRow,
     TopicRow,
 )
 
@@ -67,6 +72,7 @@ _TASK_LOAD = (
     selectinload(TaskRow.skills),
     selectinload(TaskRow.assets),
     selectinload(TaskRow.hints),
+    selectinload(TaskRow.tests),
 )
 
 
@@ -305,6 +311,15 @@ class SqlRepository:
                         created_at=created_at,
                         skills=[TaskSkillRow(skill_code=code) for code in d.skills],
                         hints=[TaskHintRow(level=h.level, text=h.text) for h in d.hints],
+                        tests=[
+                            TaskTestCaseRow(
+                                position=t.position,
+                                input=t.input,
+                                output=t.output,
+                                files_json=json.dumps(dict(t.files), ensure_ascii=False),
+                            )
+                            for t in d.tests
+                        ],
                     )
                     for source_path in map(Path, d.asset_paths):
                         stored, is_new = self._store_asset(source_path, asset_root)
@@ -396,6 +411,10 @@ class SqlRepository:
             created_at=row.created_at,
             hints=tuple(TaskHint(h.level, h.text) for h in row.hints),
             verified_at=row.verified_at,
+            tests=tuple(
+                TaskTestCase(t.position, t.input, t.output, tuple(json.loads(t.files_json).items()))
+                for t in row.tests
+            ),
         )
 
     def list_tasks(
@@ -587,3 +606,74 @@ class SqlRepository:
                 .order_by(HintEventRow.id)
             )
             return [HintEvent(r.attempt_id, r.level, r.shown_at) for r in rows]
+
+    # ── запуски программ (Phase 3) ──
+
+    @staticmethod
+    def _code_run(row: CodeRunRow) -> CodeRun:
+        return CodeRun(
+            id=row.id,
+            task_id=row.task_id,
+            attempt_id=row.attempt_id,
+            created_at=row.created_at,
+            code=row.code,
+            verdict=row.verdict,
+            tests_total=row.tests_total,
+            tests_passed=row.tests_passed,
+            failed_test=row.failed_test,
+            stdout=row.stdout,
+            stderr=row.stderr,
+            exit_code=row.exit_code,
+            duration_seconds=row.duration_seconds,
+        )
+
+    def add_code_run(
+        self,
+        *,
+        task_id: int,
+        attempt_id: int | None,
+        created_at: dt.datetime,
+        code: str,
+        verdict: CodeVerdict,
+        tests_total: int,
+        tests_passed: int,
+        failed_test: int | None,
+        stdout: str,
+        stderr: str,
+        exit_code: int | None,
+        duration_seconds: float,
+    ) -> CodeRun:
+        with self._session.begin() as s:
+            row = CodeRunRow(
+                task_id=task_id,
+                attempt_id=attempt_id,
+                created_at=created_at,
+                code=code,
+                verdict=verdict,
+                tests_total=tests_total,
+                tests_passed=tests_passed,
+                failed_test=failed_test,
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                duration_seconds=duration_seconds,
+            )
+            s.add(row)
+            s.flush()
+            return self._code_run(row)
+
+    def get_code_run(self, run_id: int) -> CodeRun | None:
+        with self._session() as s:
+            row = s.get(CodeRunRow, run_id)
+            return self._code_run(row) if row else None
+
+    def list_code_runs(
+        self, task_id: int | None = None, attempt_id: int | None = None, limit: int = 20
+    ) -> list[CodeRun]:
+        query = select(CodeRunRow).order_by(CodeRunRow.created_at.desc(), CodeRunRow.id.desc())
+        if task_id is not None:
+            query = query.where(CodeRunRow.task_id == task_id)
+        if attempt_id is not None:
+            query = query.where(CodeRunRow.attempt_id == attempt_id)
+        with self._session() as s:
+            return [self._code_run(r) for r in s.scalars(query.limit(limit))]

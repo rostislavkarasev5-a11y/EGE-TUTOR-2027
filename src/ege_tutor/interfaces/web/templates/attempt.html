@@ -1,5 +1,39 @@
 {% extends "base.html" %}
 {% from "macros.html" import statement, answer_block, csrf_field with context %}
+{% macro code_block() %}
+<div id="code" class="code-box">
+  <h3>Программа на Python</h3>
+  {% if sandbox_ready %}
+  <form method="post" action="/attempts/{{ attempt.id }}/run">
+    {{ csrf_field() }}
+    <textarea name="code" class="code" rows="12" spellcheck="false" autocapitalize="off"
+      placeholder="Напиши программу. Файлы задачи лежат рядом: open('{{ task.assets[0].file_name if task.assets else 'файл.txt' }}')"
+      required>{{ last_code }}</textarea>
+    <button type="submit" class="secondary">Запустить программу</button>
+  </form>
+  <p class="meta">{% if task.tests %}Сначала программа пройдёт {{ task.tests|length }} тест(ов) с известным ответом, потом запустится на настоящих файлах задачи.{% else %}Программа запустится на файлах задачи.{% endif %}
+    Ограничения: {{ time_limit }} с и {{ memory_limit }} МБ, без интернета.</p>
+  {% else %}
+  <p class="meta">Песочница для программ не настроена, поэтому запустить программу здесь нельзя.</p>
+  {% endif %}
+  {% for r in runs %}
+  <details class="run" {% if loop.first %}open{% endif %}>
+    <summary><span class="run-{{ r.verdict|lower }}">{{ CODE_VERDICT_LABELS[r.verdict] }}</span>
+      <span class="meta">· запуск №{{ r.id }} · {{ '%.2f'|format(r.duration_seconds) }} с{% if r.tests_total %} · тесты {{ r.tests_passed }} из {{ r.tests_total }}{% endif %}</span></summary>
+    {% if r.failed_test %}<p>Не прошёл тест №{{ r.failed_test }}.</p>{% endif %}
+    {% if r.stdout.strip() %}<pre class="output">{{ r.stdout }}</pre>{% endif %}
+    {% if r.stderr.strip() %}<pre class="output error">{{ r.stderr }}</pre>{% endif %}
+    {% if loop.first and r.answer_guess and attempt.status == AttemptStatus.IN_PROGRESS %}
+    <form method="post" action="/attempts/{{ attempt.id }}/answer" class="row">
+      {{ csrf_field() }}
+      <input type="hidden" name="answer" value="{{ r.answer_guess }}">
+      <button type="submit">Отправить ответ {{ r.answer_guess }}</button>
+    </form>
+    {% endif %}
+  </details>
+  {% endfor %}
+</div>
+{% endmacro %}
 {% block content %}
 {{ statement(task) }}
 
@@ -39,6 +73,7 @@
     <form method="post" action="/attempts/{{ attempt.id }}/abandon">{{ csrf_field() }}<button class="link" type="submit">Выйти</button></form>
   </div>
   <p class="meta">Ответ пиши как на бланке ЕГЭ: целое число или десятичная дробь через запятую.</p>
+  {% if code_enabled %}{{ code_block() }}{% endif %}
   {% else %}
     {% if attempt.status == AttemptStatus.ANSWERED %}
     <p class="result verdict-{{ attempt.verdict|lower }}">Итог: {{ VERDICT_NAMES[attempt.verdict] }}
@@ -72,4 +107,4 @@
 </section>
 {% if reveal and attempt.status != AttemptStatus.IN_PROGRESS %}{{ answer_block(task) }}{% endif %}
 {% endblock %}
-{% block scripts %}<script src="/static/timer.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/timer.js"></script><script src="/static/code.js"></script>{% endblock %}

@@ -1,4 +1,5 @@
-# Сайт EGE-TUTOR-2027 на сервере (ADR-0013): приложение + Caddy (https).
+# Сайт EGE-TUTOR-2027 на сервере (ADR-0013): приложение + Caddy (https)
+# + runner — песочница для программ на Python (ADR-0014).
 # Запуск — только через скрипты deploy/*.sh: они передают --env-file /etc/ege-tutor/compose.env.
 name: ege-tutor
 
@@ -8,10 +9,43 @@ services:
     image: ege-tutor:latest
     restart: unless-stopped
     env_file: /etc/ege-tutor/web.env  # секрет подписи cookie, создаётся при установке
+    environment:
+      EGE_RUNNER_SOCKET: /run/ege-runner/runner.sock
+    depends_on:
+      - runner
     volumes:
       - /var/lib/ege-tutor:/data  # база, пароль (хеш), копии — вне Git и вне контейнера
+      - runner_socket:/run/ege-runner
     expose:
       - "8000"
+
+  # Песочница: без сети, без доступа к базе и паролю, только для чтения, с лимитами.
+  # Связь с сайтом — только через Unix-сокет в общем томе runner_socket.
+  runner:
+    image: ege-tutor:latest  # тот же образ, что у app: его собирает build выше
+    pull_policy: never
+    restart: unless-stopped
+    command: ["ege-runner", "serve", "--socket", "/run/ege-runner/runner.sock"]
+    user: "10002:10001"
+    network_mode: none
+    read_only: true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 1
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+    volumes:
+      - runner_socket:/run/ege-runner
+    healthcheck:
+      test: ["CMD", "ege-runner", "ping", "--socket", "/run/ege-runner/runner.sock"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
 
   caddy:
     image: caddy:2
@@ -29,5 +63,6 @@ services:
       - caddy_config:/config
 
 volumes:
+  runner_socket:
   caddy_data:
   caddy_config:

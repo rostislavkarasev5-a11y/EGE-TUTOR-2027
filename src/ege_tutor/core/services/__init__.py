@@ -2,6 +2,7 @@
 
 - profile, catalog, content import — Phase 1
 - attempts, hints, timer — Phase 2
+- code (программы на Python в Sandbox) — Phase 3
 - mastery, mistakes, review — Phase 4
 - diagnostics — Phase 5
 - calendar, planner, discipline — Phase 7

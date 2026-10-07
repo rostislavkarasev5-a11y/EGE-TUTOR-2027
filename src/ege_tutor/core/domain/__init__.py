@@ -9,6 +9,12 @@ from ege_tutor.core.domain.attempt import (
     Verdict,
 )
 from ege_tutor.core.domain.catalog import AnswerKind, Catalog, ExamSpec, ExamSpecItem, Skill, Topic
+from ege_tutor.core.domain.code import (
+    CODE_VERDICT_LABELS,
+    CodeRun,
+    CodeVerdict,
+    TaskTestCase,
+)
 from ege_tutor.core.domain.content import TaskSource, VerificationStatus
 from ege_tutor.core.domain.imports import (
     ImportBatch,
@@ -30,6 +36,7 @@ from ege_tutor.core.domain.task import (
 )
 
 __all__ = [
+    "CODE_VERDICT_LABELS",
     "DEFAULT_TARGET_SCORE",
     "HINT_LEVELS",
     "PRACTICE_STATUSES",
@@ -41,6 +48,8 @@ __all__ = [
     "AttemptMode",
     "AttemptStatus",
     "Catalog",
+    "CodeRun",
+    "CodeVerdict",
     "ExamSpec",
     "ExamSpecItem",
     "HintEvent",
@@ -56,6 +65,7 @@ __all__ = [
     "TaskDraft",
     "TaskHint",
     "TaskSource",
+    "TaskTestCase",
     "Topic",
     "Verdict",
     "VerificationStatus",

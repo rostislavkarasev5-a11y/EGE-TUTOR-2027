@@ -4,6 +4,7 @@ import datetime as dt
 from dataclasses import dataclass
 from enum import StrEnum
 
+from ege_tutor.core.domain.code import TaskTestCase
 from ege_tutor.core.domain.content import TaskSource, VerificationStatus
 from ege_tutor.core.domain.subject import Subject
 
@@ -64,6 +65,7 @@ class TaskDraft:
     asset_paths: tuple[str, ...]
     content_hash: str
     hints: tuple[TaskHint, ...] = ()
+    tests: tuple[TaskTestCase, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,7 @@ class Task:
     created_at: dt.datetime
     hints: tuple[TaskHint, ...] = ()
     verified_at: dt.datetime | None = None
+    tests: tuple[TaskTestCase, ...] = ()
 
     @property
     def can_practice(self) -> bool:

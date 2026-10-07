@@ -66,6 +66,8 @@ class SandboxConfig(_Strict):
     time_limit_seconds: PositiveWeight
     memory_limit_mb: Annotated[int, Field(gt=0)]
     network_enabled: bool
+    # Образ Docker с ege-runner (ADR-0014); собирается из Dockerfile репозитория.
+    docker_image: str = "ege-tutor:latest"
 
 
 class AppConfig(_Strict):

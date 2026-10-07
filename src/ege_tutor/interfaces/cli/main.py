@@ -7,8 +7,10 @@ from typing import Annotated
 import typer
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 
 from ege_tutor import __version__
 from ege_tutor.config import ConfigError
@@ -19,6 +21,8 @@ from ege_tutor.core.domain import (
     AnswerType,
     Attempt,
     AttemptStatus,
+    CodeRun,
+    CodeVerdict,
     ImportBatchStatus,
     ImportReport,
     Subject,
@@ -112,7 +116,7 @@ def _table(**kwargs) -> Table:
     return Table(box=box.SQUARE, **kwargs)
 
 
-def _panel(renderable: str, **kwargs) -> Panel:
+def _panel(renderable: str | Text, **kwargs) -> Panel:
     return Panel(renderable, box=box.SQUARE, **kwargs)
 
 
@@ -152,7 +156,7 @@ def info() -> None:
     parts.add_column("Компонент")
     parts.add_column("Статус")
     parts.add_row("Хранилище (Phase 1)", _yes_no(state.storage_ready))
-    parts.add_row("Python Sandbox (Phase 3)", _yes_no(state.sandbox_available))
+    parts.add_row("Python Sandbox", _yes_no(state.sandbox_available))
     parts.add_row("AI Layer (Phase 6)", _yes_no(state.ai_available))
     console.print(parts)
     console.print(f"Задач в базе: {state.task_count}")
@@ -431,6 +435,8 @@ def task(
         console.print(f"Навыки: {', '.join(t.skills)}")
     for asset in t.assets:
         console.print(f"Файл: {asset.file_name} → {tutor.asset_path(asset)}")
+    if t.tests:
+        console.print(f"Тестов для программы: {len(t.tests)} (проверка: ege run {t.id} файл.py)")
     if show_answer:
         console.print(f"Ответ: [bold]{_display_answer(t)}[/]")
         if t.solution:
@@ -696,6 +702,91 @@ def attempts(
             result,
             str(a.max_hint_level) if a.max_hint_level else "—",
             f"{_minutes(a.time_spent_seconds)} / {_minutes(a.time_norm_seconds)}",
+        )
+    console.print(table)
+
+
+# ── программы на Python (Phase 3) ───────────────────────────────────────────
+
+CODE_VERDICT_NAMES = {
+    CodeVerdict.OK: "[green]программа отработала[/]",
+    CodeVerdict.WRONG_ANSWER: "[red]неверный вывод[/]",
+    CodeVerdict.TIME_LIMIT: "[red]превышено время[/]",
+    CodeVerdict.MEMORY_LIMIT: "[red]превышена память[/]",
+    CodeVerdict.RUNTIME_ERROR: "[red]ошибка во время работы[/]",
+    CodeVerdict.SYNTAX_ERROR: "[red]синтаксическая ошибка[/]",
+}
+
+
+def _tests_text(r: CodeRun) -> str:
+    if not r.tests_total:
+        return "—"
+    return f"{r.tests_passed} из {r.tests_total}"
+
+
+def _print_code_run(r: CodeRun) -> None:
+    console.print(f"Итог: {CODE_VERDICT_NAMES[r.verdict]} · {r.duration_seconds:.2f} с")
+    if r.tests_total:
+        console.print(f"Тесты: {_tests_text(r)}")
+    if r.failed_test is not None:
+        console.print(f"[yellow]Не прошёл тест №{r.failed_test}.[/]")
+    if r.stdout.strip():
+        console.print(_panel(Text(r.stdout.rstrip()), title="Вывод программы", title_align="left"))
+    if r.stderr.strip():
+        console.print(
+            _panel(Text(r.stderr.rstrip()), title="Ошибки", title_align="left", style="red")
+        )
+    if r.answer_guess is not None:
+        console.print(f"Похоже, ответ: [bold]{escape(r.answer_guess)}[/] (последняя строка вывода)")
+
+
+@app.command(name="run")
+def run_code(
+    task_id: Annotated[int, typer.Argument(help="ID задачи по информатике.")],
+    file: Annotated[
+        Path,
+        typer.Argument(help="Файл с программой на Python.", exists=True, dir_okay=False),
+    ],
+) -> None:
+    """Запустить свою программу к задаче в песочнице: тесты задачи, потом настоящие файлы."""
+    try:
+        code = file.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        raise _fail("файл с программой должен быть в кодировке UTF-8") from e
+    try:
+        result = _tutor().run_code(task_id, code)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    _print_code_run(result)
+
+
+@app.command()
+def runs(
+    task_id: Annotated[int | None, typer.Option("--task", "-t", help="Только эта задача.")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Сколько показать.")] = 20,
+) -> None:
+    """История запусков программ. Запуски никогда не удаляются."""
+    found = _tutor().code_runs(task_id, limit=limit)
+    if not found:
+        console.print("Программы пока не запускались.")
+        return
+    table = _table(title="Запуски программ")
+    table.add_column("№", justify="right")
+    table.add_column("Когда (UTC)")
+    table.add_column("Задача", justify="right")
+    table.add_column("Итог")
+    table.add_column("Тесты")
+    table.add_column("Время, с", justify="right")
+    table.add_column("Ответ?")
+    for r in found:
+        table.add_row(
+            str(r.id),
+            r.created_at.strftime("%Y-%m-%d %H:%M"),
+            str(r.task_id),
+            CODE_VERDICT_NAMES[r.verdict],
+            _tests_text(r),
+            f"{r.duration_seconds:.2f}",
+            Text(r.answer_guess or "—"),
         )
     console.print(table)
 

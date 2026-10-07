@@ -8,6 +8,8 @@ from ege_tutor.core.domain import (
     AttemptMode,
     AttemptStatus,
     Catalog,
+    CodeRun,
+    CodeVerdict,
     ExamSpec,
     HintEvent,
     ImportBatch,
@@ -33,7 +35,7 @@ class Repository(Protocol):
     CORE читает и пишет данные только через этот порт. Методы добавляются по фазам.
 
     Инварианты, которые обязана соблюдать любая реализация:
-    - сырые попытки пользователя никогда не удаляются из истории (нет метода удаления);
+    - сырые попытки и запуски программ никогда не удаляются из истории (нет метода удаления);
     - снимки mastery и прогнозов не переписываются задним числом;
     - задача не сохраняется без source, source_ref и verification_status;
     - откат импорта не удаляет записи, а выводит задачи из оборота (история сохраняется).
@@ -150,3 +152,29 @@ class Repository(Protocol):
     def list_attempts(self, task_id: int | None = None, limit: int = 50) -> list[Attempt]: ...
 
     def list_hint_events(self, attempt_id: int) -> list[HintEvent]: ...
+
+    # ── запуски программ (Phase 3) ──
+    def add_code_run(
+        self,
+        *,
+        task_id: int,
+        attempt_id: int | None,
+        created_at: dt.datetime,
+        code: str,
+        verdict: CodeVerdict,
+        tests_total: int,
+        tests_passed: int,
+        failed_test: int | None,
+        stdout: str,
+        stderr: str,
+        exit_code: int | None,
+        duration_seconds: float,
+    ) -> CodeRun: ...
+
+    def get_code_run(self, run_id: int) -> CodeRun | None: ...
+
+    def list_code_runs(
+        self, task_id: int | None = None, attempt_id: int | None = None, limit: int = 20
+    ) -> list[CodeRun]:
+        """Последние запуски, новые первыми."""
+        ...

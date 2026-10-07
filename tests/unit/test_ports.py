@@ -30,7 +30,7 @@ def test_unavailable_sandbox_refuses_to_run():
     sandbox = UnavailableSandbox()
     request = RunRequest(code="print(1)", limits=SandboxLimits(10, 256))
     assert sandbox.is_available is False
-    with pytest.raises(SandboxUnavailableError, match="Phase 3"):
+    with pytest.raises(SandboxUnavailableError, match="не настроен"):
         sandbox.run(request)
 
 
