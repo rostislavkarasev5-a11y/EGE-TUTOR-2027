@@ -56,7 +56,7 @@ def make_tutor(fixed_clock):
 
 @pytest.fixture
 def ids(write_file):
-    write_file("numbers.txt", NUMBERS)
+    write_file("numbers.txt", NUMBERS.encode())  # байты: на Windows write_text дал бы \r\n
     return write_file("t.yaml", TASKS)
 
 
