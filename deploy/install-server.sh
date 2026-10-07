@@ -9,6 +9,38 @@
 # Повторный запуск безопасен: данные и пароль сохраняются.
 set -euo pipefail
 
+install_docker() {
+	# У многих провайдеров (например, Beget) Docker уже установлен из репозитория Docker:
+	# тогда пакеты Ubuntu docker.io ставить нельзя, они конфликтуют с docker-ce.
+	if command -v docker >/dev/null; then
+		echo "      Docker уже установлен: $(docker --version)"
+		if ! docker compose version >/dev/null 2>&1; then
+			apt-get install -y -qq docker-compose-plugin >/dev/null 2>&1 ||
+				apt-get install -y -qq docker-compose-v2 >/dev/null
+		fi
+	else
+		apt-get install -y -qq docker.io docker-compose-v2 >/dev/null
+	fi
+	systemctl enable --now docker >/dev/null
+	if ! docker compose version >/dev/null 2>&1; then
+		echo "Не получилось установить docker compose. Пришли Claude скриншот этого окна." >&2
+		return 1
+	fi
+}
+
+check_ports_free() {
+	# Порты 80 и 443 нужны сайту. Если их занимает другая программа (не наш Caddy),
+	# лучше остановиться и сказать об этом, чем сломать чужой сайт.
+	local busy
+	busy=$(ss -ltnpH '( sport = :80 or sport = :443 )' 2>/dev/null | grep -v docker-proxy || true)
+	if [[ -n "$busy" ]]; then
+		echo "Порты 80/443 уже заняты другой программой:" >&2
+		echo "$busy" >&2
+		echo "Пришли Claude скриншот этого окна, ничего не удаляй." >&2
+		return 1
+	fi
+}
+
 main() {
 	local domain=""
 	while [[ $# -gt 0 ]]; do
@@ -33,15 +65,19 @@ main() {
 		return 1
 	fi
 
-	echo "[1/6] Устанавливаю Docker, Git и защиту портов..."
+	echo "[1/6] Проверяю Docker и Git..."
 	export DEBIAN_FRONTEND=noninteractive
 	apt-get update -qq
-	apt-get install -y -qq docker.io docker-compose-v2 git curl ufw >/dev/null
-	systemctl enable --now docker >/dev/null
-	ufw allow OpenSSH >/dev/null
-	ufw allow 80/tcp >/dev/null
-	ufw allow 443/tcp >/dev/null
-	ufw --force enable >/dev/null
+	apt-get install -y -qq git curl >/dev/null
+	install_docker
+	check_ports_free
+	# Если на сервере уже включён файрвол ufw, открываем в нём порты сайта.
+	# Сами мы ufw не включаем: на сервере могут работать другие программы.
+	if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+		ufw allow OpenSSH >/dev/null
+		ufw allow 80/tcp >/dev/null
+		ufw allow 443/tcp >/dev/null
+	fi
 
 	echo "[2/6] Скачиваю программу..."
 	local repo_url="https://github.com/rostislavkarasev5-a11y/EGE-TUTOR-2027.git"
