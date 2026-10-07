@@ -20,4 +20,4 @@ ADR — короткая запись одного архитектурного 
 | [0008](0008-sandbox-on-windows.md) | Sandbox на Windows: Docker Desktop, запасной WSL2 | Accepted |
 | [0009](0009-exam-mode-rules.md) | Правила Exam Mode | Accepted |
 | [0010](0010-pyyaml-for-content.md) | PyYAML для файлов контента | Accepted |
-| [0011](0011-import-batches-and-soft-rollback.md) | Импорт пачками, предпросмотр и мягкая отмена | Proposed |
+| [0011](0011-import-batches-and-soft-rollback.md) | Импорт пачками, предпросмотр и мягкая отмена | Accepted |
