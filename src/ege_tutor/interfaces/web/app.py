@@ -1,0 +1,676 @@
+"""Сайт на FastAPI (ADR-0013). Только ввод/вывод: вся логика — в TutorApp, как и у CLI.
+
+Страницы собираются на сервере из шаблонов Jinja2. Вход — пароль владельца,
+сессия — подписанная cookie, все формы защищены CSRF-токеном.
+"""
+
+import datetime as dt
+import hmac
+import secrets
+import threading
+from pathlib import Path
+from typing import Annotated, Any
+from urllib.parse import quote
+
+from fastapi import FastAPI, Form, Request, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+
+from ege_tutor import __version__
+from ege_tutor.core.app import AppError, TutorApp
+from ege_tutor.core.domain import (
+    SOURCE_LABELS,
+    AnswerType,
+    AttemptStatus,
+    ImportBatchStatus,
+    Subject,
+    Task,
+    TaskSource,
+    Verdict,
+    VerificationStatus,
+)
+from ege_tutor.interfaces.web import uploads
+from ege_tutor.interfaces.web.auth import LoginThrottle, PasswordStore, load_secret_key, web_dir
+
+HERE = Path(__file__).resolve().parent
+SESSION_DAYS = 30
+
+SUBJECT_NAMES = {
+    Subject.MATH_PROFILE: "Математика (профиль)",
+    Subject.INFORMATICS: "Информатика",
+}
+STATUS_NAMES = {
+    VerificationStatus.UNVERIFIED: "не проверена",
+    VerificationStatus.AUTO_CHECKED: "проверена автоматически",
+    VerificationStatus.REVIEWED: "проверена",
+    VerificationStatus.DISPUTED: "спорная",
+    VerificationStatus.REJECTED: "отклонена",
+}
+VERDICT_NAMES = {
+    Verdict.CORRECT: "верно",
+    Verdict.WRONG: "неверно",
+    Verdict.WRONG_FORMAT: "неверный формат",
+}
+ATTEMPT_STATUS_NAMES = {
+    AttemptStatus.IN_PROGRESS: "решается",
+    AttemptStatus.ANSWERED: "ответ дан",
+    AttemptStatus.GAVE_UP: "сдался",
+    AttemptStatus.ABANDONED: "брошена",
+}
+HINT_NAMES = {
+    1: "небольшая подсказка",
+    2: "конкретная подсказка",
+    3: "подробное объяснение",
+    4: "полное решение",
+}
+
+SECURITY_HEADERS = {
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "Content-Security-Policy": (
+        "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
+        "form-action 'self'; frame-ancestors 'none'; base-uri 'none'"
+    ),
+}
+
+
+class LockedTutor:
+    """TutorApp, к которому запросы обращаются по очереди.
+
+    Сайт обрабатывает запросы в нескольких потоках, а пользователь один: очередь
+    проще и надёжнее, чем параллельная запись в SQLite.
+    """
+
+    def __init__(self, tutor: TutorApp) -> None:
+        self._tutor = tutor
+        self._lock = threading.RLock()
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._tutor, name)
+        if not callable(attr):
+            return attr
+
+        def call(*args: Any, **kwargs: Any) -> Any:
+            with self._lock:
+                return attr(*args, **kwargs)
+
+        return call
+
+
+class _LoginRequired(Exception):
+    def __init__(self, next_path: str) -> None:
+        self.next_path = next_path
+
+
+class _BadCsrf(Exception):
+    pass
+
+
+# ── вспомогательное для шаблонов ────────────────────────────────────────────
+
+
+def minutes(seconds: int | None) -> str:
+    if seconds is None:
+        return "—"
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def display_answer(task: Task) -> str:
+    if task.answer is None:
+        return "—"
+    if task.answer_type == AnswerType.NUMBER:
+        return task.answer.replace(".", ",")  # как на бланке ЕГЭ
+    return task.answer
+
+
+def utc_time(value: dt.datetime | None) -> str:
+    return value.strftime("%d.%m.%Y %H:%M") + " UTC" if value else "—"
+
+
+def _safe_next(path: str | None) -> str:
+    """Куда вернуться после входа: только страница этого же сайта."""
+    if path and path.startswith("/") and not path.startswith("//") and "\\" not in path:
+        return path
+    return "/"
+
+
+def _parse_subject(text: str | None) -> Subject | None:
+    if not text:
+        return None
+    try:
+        return Subject.parse(text)
+    except ValueError:
+        return None
+
+
+def _parse_int(text: str | None) -> int | None:
+    try:
+        return int(text) if text not in (None, "") else None
+    except ValueError:
+        return None
+
+
+# ── приложение ──────────────────────────────────────────────────────────────
+
+
+def create_app(
+    tutor: TutorApp,
+    *,
+    secure_cookies: bool = True,
+    password_store: PasswordStore | None = None,
+    throttle: LoginThrottle | None = None,
+) -> FastAPI:
+    """Собрать сайт над готовым TutorApp."""
+    data_dir = tutor.settings.data_dir
+    passwords = password_store or PasswordStore(web_dir(data_dir) / "password.argon2")
+    login_throttle = throttle or LoginThrottle()
+    upload_root = web_dir(data_dir) / "uploads"
+    core = LockedTutor(tutor)
+
+    app = FastAPI(title="EGE-TUTOR-2027", docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=load_secret_key(data_dir),
+        session_cookie="ege_session",
+        max_age=SESSION_DAYS * 24 * 60 * 60,
+        same_site="lax",
+        https_only=secure_cookies,
+    )
+    app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+
+    templates = Jinja2Templates(directory=HERE / "templates")
+    templates.env.globals.update(
+        SUBJECT_NAMES=SUBJECT_NAMES,
+        STATUS_NAMES=STATUS_NAMES,
+        VERDICT_NAMES=VERDICT_NAMES,
+        ATTEMPT_STATUS_NAMES=ATTEMPT_STATUS_NAMES,
+        HINT_NAMES=HINT_NAMES,
+        SOURCE_LABELS=SOURCE_LABELS,
+        AI_SOURCE=TaskSource.AI_GENERATED,
+        Subject=Subject,
+        TaskSource=TaskSource,
+        ImportBatchStatus=ImportBatchStatus,
+        AttemptStatus=AttemptStatus,
+        version=__version__,
+    )
+    templates.env.filters.update(minutes=minutes, display_answer=display_answer, utc_time=utc_time)
+
+    # ── сессия, вход, CSRF ──
+
+    def csrf_token(request: Request) -> str:
+        token = request.session.get("csrf")
+        if not token:
+            token = secrets.token_urlsafe(32)
+            request.session["csrf"] = token
+        return token
+
+    def flash(request: Request, message: str, kind: str = "info") -> None:
+        request.session.setdefault("flash", []).append([kind, message])
+
+    def render(request: Request, name: str, status_code: int = 200, **context: Any):
+        messages = request.session.pop("flash", [])
+        return templates.TemplateResponse(
+            request,
+            name,
+            {
+                "csrf": csrf_token(request),
+                "messages": messages,
+                "logged_in": is_logged_in(request),
+                **context,
+            },
+            status_code=status_code,
+        )
+
+    def is_logged_in(request: Request) -> bool:
+        fingerprint = passwords.fingerprint()
+        return (
+            request.session.get("user") == "owner"
+            and bool(fingerprint)
+            and request.session.get("pw") == fingerprint
+        )
+
+    def require_login(request: Request) -> None:
+        if not is_logged_in(request):
+            target = request.url.path
+            if request.url.query:
+                target += "?" + request.url.query
+            raise _LoginRequired(target)
+
+    async def check_csrf(request: Request) -> None:
+        form = await request.form()
+        sent = str(form.get("csrf", ""))
+        expected = request.session.get("csrf", "")
+        if not expected or not hmac.compare_digest(sent, expected):
+            raise _BadCsrf
+
+    def redirect(path: str) -> RedirectResponse:
+        return RedirectResponse(path, status_code=303)
+
+    @app.exception_handler(_LoginRequired)
+    async def _to_login(_request: Request, exc: _LoginRequired):
+        return redirect("/login?next=" + quote(exc.next_path, safe="/"))
+
+    @app.exception_handler(_BadCsrf)
+    async def _bad_csrf(request: Request, _exc: _BadCsrf):
+        return render(
+            request,
+            "message.html",
+            status_code=400,
+            title="Форма устарела",
+            text="Страница была открыта слишком давно. Вернись назад, обнови её и повтори.",
+        )
+
+    @app.middleware("http")
+    async def _security_headers(request: Request, call_next):
+        response = await call_next(request)
+        for key, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(key, value)
+        if secure_cookies:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        if request.url.path not in ("/healthz",) and not request.url.path.startswith("/static"):
+            response.headers.setdefault("Cache-Control", "no-store")
+        return response
+
+    @app.get("/healthz")
+    def healthz():
+        return JSONResponse({"status": "ok", "version": __version__})
+
+    @app.get("/login", response_class=HTMLResponse)
+    def login_page(request: Request, next: str | None = None):
+        if is_logged_in(request):
+            return redirect(_safe_next(next))
+        return render(
+            request,
+            "login.html",
+            next=_safe_next(next),
+            password_set=passwords.is_set(),
+        )
+
+    @app.post("/login")
+    async def login(
+        request: Request,
+        password: Annotated[str, Form()] = "",
+        next: Annotated[str, Form()] = "/",
+    ):
+        await check_csrf(request)
+        client = request.client.host if request.client else "unknown"
+        wait = login_throttle.seconds_locked(client)
+        if wait:
+            return render(
+                request,
+                "login.html",
+                status_code=429,
+                next=_safe_next(next),
+                password_set=passwords.is_set(),
+                error=f"Слишком много неверных попыток. Подожди {wait // 60 + 1} мин.",
+            )
+        if not passwords.verify(password):
+            login_throttle.failure(client)
+            return render(
+                request,
+                "login.html",
+                status_code=401,
+                next=_safe_next(next),
+                password_set=passwords.is_set(),
+                error="Неверный пароль.",
+            )
+        login_throttle.success(client)
+        request.session.clear()  # новая сессия после входа
+        request.session["user"] = "owner"
+        request.session["pw"] = passwords.fingerprint()
+        return redirect(_safe_next(next))
+
+    @app.post("/logout")
+    async def logout(request: Request):
+        await check_csrf(request)
+        request.session.clear()
+        return redirect("/login")
+
+    # ── главная ──
+
+    @app.get("/", response_class=HTMLResponse)
+    def home(request: Request):
+        require_login(request)
+        return render(
+            request,
+            "home.html",
+            info=core.info(),
+            profile=core.profile(),
+            has_unverified=core.next_unverified_task() is not None,
+        )
+
+    # ── задачи ──
+
+    @app.get("/tasks", response_class=HTMLResponse)
+    def tasks_page(
+        request: Request,
+        subject: str | None = None,
+        item: str | None = None,
+        source: str | None = None,
+    ):
+        require_login(request)
+        parsed_source = TaskSource(source) if source in set(TaskSource) else None
+        found = core.tasks(_parse_subject(subject), _parse_int(item), parsed_source, limit=500)
+        return render(
+            request,
+            "tasks.html",
+            tasks=found,
+            subject=subject or "",
+            item=item or "",
+            source=source or "",
+        )
+
+    def load_task(request: Request, task_id: int) -> Task | None:
+        try:
+            return core.task(task_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return None
+
+    @app.get("/tasks/{task_id}", response_class=HTMLResponse)
+    def task_page(request: Request, task_id: int, answer: bool = False):
+        require_login(request)
+        task = load_task(request, task_id)
+        if task is None:
+            return redirect("/tasks")
+        return render(
+            request,
+            "task.html",
+            task=task,
+            show_answer=answer,
+            reason=core.why_not_practicable(task),
+        )
+
+    @app.get("/tasks/{task_id}/files/{index}")
+    def task_file(request: Request, task_id: int, index: int):
+        require_login(request)
+        task = load_task(request, task_id)
+        if task is None or not 0 <= index < len(task.assets):
+            return redirect("/tasks")
+        asset = task.assets[index]
+        path = core.asset_path(asset).resolve()
+        if not path.is_relative_to(core.asset_root.resolve()) or not path.is_file():
+            flash(request, "файл задачи не найден на диске", "error")
+            return redirect(f"/tasks/{task_id}")
+        return FileResponse(path, filename=asset.file_name)
+
+    # ── решение ──
+
+    def start_and_open(request: Request, task_id: int):
+        try:
+            attempt = core.start_attempt(task_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(f"/tasks/{task_id}")
+        return redirect(f"/attempts/{attempt.id}")
+
+    @app.post("/solve")
+    async def solve_next(
+        request: Request,
+        subject: Annotated[str, Form()] = "",
+        item: Annotated[str, Form()] = "",
+    ):
+        require_login(request)
+        await check_csrf(request)
+        request.session["solve_filter"] = [subject, item]
+        try:
+            task = core.next_task(_parse_subject(subject), _parse_int(item))
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/")
+        return start_and_open(request, task.id)
+
+    @app.post("/tasks/{task_id}/start")
+    async def solve_task(request: Request, task_id: int):
+        require_login(request)
+        await check_csrf(request)
+        return start_and_open(request, task_id)
+
+    @app.get("/attempts/{attempt_id}", response_class=HTMLResponse)
+    def attempt_page(request: Request, attempt_id: int, reveal: bool = False):
+        require_login(request)
+        try:
+            attempt = core.attempt(attempt_id)
+            task = core.task(attempt.task_id)
+            hints = core.shown_hints(attempt_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/")
+        notes = request.session.get("result_notes", {})
+        subject, item = request.session.get("solve_filter", ["", ""])
+        return render(
+            request,
+            "attempt.html",
+            attempt=attempt,
+            task=task,
+            hints=hints,
+            explanation=notes.get(str(attempt_id), ""),
+            reveal=reveal or attempt.status == AttemptStatus.GAVE_UP or attempt.correct,
+            started_iso=attempt.started_at.isoformat(),
+            filter_subject=subject,
+            filter_item=item,
+        )
+
+    @app.post("/attempts/{attempt_id}/answer")
+    async def submit_answer(request: Request, attempt_id: int, answer: Annotated[str, Form()] = ""):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            result = core.submit_answer(attempt_id, answer)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(f"/attempts/{attempt_id}")
+        notes = request.session.get("result_notes", {})
+        notes = dict(list(notes.items())[-9:])  # храним пояснения к последним попыткам
+        notes[str(attempt_id)] = result.check.explanation
+        request.session["result_notes"] = notes
+        return redirect(f"/attempts/{attempt_id}")
+
+    @app.post("/attempts/{attempt_id}/hint")
+    async def hint(request: Request, attempt_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            core.next_hint(attempt_id)
+        except AppError as e:
+            flash(request, str(e), "warning")
+        return redirect(f"/attempts/{attempt_id}#hints")
+
+    @app.post("/attempts/{attempt_id}/give-up")
+    async def give_up(request: Request, attempt_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            core.give_up(attempt_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+        return redirect(f"/attempts/{attempt_id}")
+
+    @app.post("/attempts/{attempt_id}/similar")
+    async def similar(request: Request, attempt_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            attempt = core.attempt(attempt_id)
+            if attempt.status == AttemptStatus.IN_PROGRESS:
+                core.give_up(attempt_id)  # похожая задача = сдался на этой (подсказка 5)
+            found = core.similar_task(attempt.task_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(f"/attempts/{attempt_id}")
+        if found is None:
+            flash(request, "Похожих проверенных задач пока нет.", "warning")
+            return redirect(f"/attempts/{attempt_id}")
+        return start_and_open(request, found.id)
+
+    @app.post("/attempts/{attempt_id}/abandon")
+    async def abandon(request: Request, attempt_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            core.abandon_attempt(attempt_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+        return redirect("/")
+
+    @app.get("/attempts", response_class=HTMLResponse)
+    def attempts_page(request: Request, task: str | None = None):
+        require_login(request)
+        return render(request, "attempts.html", attempts=core.attempts(_parse_int(task), limit=200))
+
+    # ── проверка эталонных ответов ──
+
+    @app.get("/review", response_class=HTMLResponse)
+    def review_page(request: Request):
+        require_login(request)
+        skipped = request.session.get("review_skip", [])
+        task = core.next_unverified_task(exclude=skipped)
+        return render(request, "review.html", task=task, skipped=len(skipped))
+
+    @app.post("/review/{task_id}")
+    async def review_task(request: Request, task_id: int, decision: Annotated[str, Form()] = ""):
+        require_login(request)
+        await check_csrf(request)
+        if decision == "skip":
+            skipped = request.session.get("review_skip", [])
+            request.session["review_skip"] = [*skipped, task_id][-500:]
+            return redirect("/review")
+        if decision == "reset":
+            request.session.pop("review_skip", None)
+            return redirect("/review")
+        if decision not in ("yes", "no"):
+            flash(request, "Выбери «верный» или «неверный».", "error")
+            return redirect("/review")
+        try:
+            core.review_task(task_id, answer_is_correct=decision == "yes")
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/review")
+        if decision == "yes":
+            flash(request, f"Задача {task_id} проверена, её можно решать.", "success")
+        else:
+            flash(request, f"Задача {task_id} помечена как спорная и не будет выдаваться.")
+        return redirect("/review")
+
+    # ── профиль ──
+
+    @app.get("/profile", response_class=HTMLResponse)
+    def profile_page(request: Request):
+        require_login(request)
+        return render(request, "profile.html", profile=core.profile())
+
+    @app.post("/profile")
+    async def profile_save(
+        request: Request,
+        display_name: Annotated[str, Form()] = "",
+        target_math: Annotated[str, Form()] = "",
+        target_informatics: Annotated[str, Form()] = "",
+    ):
+        require_login(request)
+        await check_csrf(request)
+        targets = {}
+        for subject, text in (
+            (Subject.MATH_PROFILE, target_math),
+            (Subject.INFORMATICS, target_informatics),
+        ):
+            value = _parse_int(text)
+            if text and value is None:
+                flash(request, "Целевой балл — целое число от 0 до 100.", "error")
+                return redirect("/profile")
+            if value is not None:
+                targets[subject] = value
+        try:
+            core.update_profile(display_name=display_name, targets=targets)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/profile")
+        flash(request, "Профиль сохранён.", "success")
+        return redirect("/profile")
+
+    # ── импорт ──
+
+    @app.get("/import", response_class=HTMLResponse)
+    def import_page(request: Request):
+        require_login(request)
+        return render(request, "import.html", batches=core.import_batches())
+
+    @app.post("/import/preview", response_class=HTMLResponse)
+    async def import_preview(request: Request, file: UploadFile):
+        require_login(request)
+        await check_csrf(request)
+        uploads.remove_stale(upload_root)
+        try:
+            token, path = uploads.save_upload(upload_root, file.filename or "", file.file)
+        except uploads.UploadError as e:
+            flash(request, str(e), "error")
+            return redirect("/import")
+        report = core.preview_import(path)
+        can_apply = bool(report.accepted) and not report.file_error
+        if not can_apply:
+            uploads.discard(upload_root, token)
+        return render(
+            request,
+            "import_report.html",
+            report=report,
+            token=token if can_apply else None,
+        )
+
+    @app.post("/import/apply")
+    async def import_apply(request: Request, token: Annotated[str, Form()] = ""):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            path = uploads.find_task_file(upload_root, token)
+        except uploads.UploadError as e:
+            flash(request, str(e), "error")
+            return redirect("/import")
+        try:
+            result = core.import_tasks(path)
+        finally:
+            uploads.discard(upload_root, token)
+        if result.batch is None:
+            flash(request, "Ничего не добавлено: в файле нет годных задач.", "error")
+        else:
+            flash(
+                request,
+                f"Добавлено задач: {result.batch.added_count} (импорт №{result.batch.id}). "
+                "Новые задачи нужно проверить на странице «Проверка».",
+                "success",
+            )
+        return redirect("/import")
+
+    @app.post("/imports/{batch_id}/undo")
+    async def import_undo(request: Request, batch_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            batch = core.rollback_import(batch_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/import")
+        flash(
+            request,
+            f"Импорт №{batch.id} отменён, задач выведено из оборота: {batch.added_count}.",
+            "success",
+        )
+        return redirect("/import")
+
+    # ── резервная копия ──
+
+    @app.post("/backup")
+    async def backup(request: Request):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            path = core.backup()
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/")
+        return FileResponse(path, filename=path.name, media_type="application/octet-stream")
+
+    return app

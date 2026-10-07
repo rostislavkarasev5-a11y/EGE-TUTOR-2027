@@ -61,3 +61,40 @@ jobs:
           EGE_NONINTERACTIVE: "1"
           EGE_TUTOR_DATA_DIR: ${{ runner.temp }}\ege-data-install
         run: call install.bat
+
+  server:
+    # Сайт на сервере (ADR-0013): скрипты, Docker-образ и запуск контейнера.
+    name: Server image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Shellcheck
+        run: shellcheck -x deploy/*.sh
+
+      - name: Compose file is valid
+        run: |
+          printf 'EGE_SITE_ADDRESS=example.invalid\n' > "$RUNNER_TEMP/compose.env"
+          sudo mkdir -p /etc/ege-tutor && sudo touch /etc/ege-tutor/web.env
+          docker compose --env-file "$RUNNER_TEMP/compose.env" -f deploy/docker-compose.yml config --quiet
+
+      - name: Build image
+        run: docker build -t ege-tutor:ci .
+
+      - name: Run site in container
+        run: |
+          docker run -d --name ege -p 8000:8000 ege-tutor:ci sh -c \
+            'printf "ci-password-0123\nci-password-0123\n" | ege-web set-password && exec ege-web serve --host 0.0.0.0 --port 8000'
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz; then break; fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/healthz
+          curl -fsS http://127.0.0.1:8000/login | grep -q "Пароль"
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/)" = "303"
+          docker exec ege ege backup
+          docker exec ege sh -c 'ls /data/backups/ege-*.db'
+
+      - name: Container logs
+        if: always()
+        run: docker logs ege || true

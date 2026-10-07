@@ -1,0 +1,33 @@
+# Сайт EGE-TUTOR-2027 на сервере (ADR-0013): приложение + Caddy (https).
+# Запуск — только через скрипты deploy/*.sh: они передают --env-file /etc/ege-tutor/compose.env.
+name: ege-tutor
+
+services:
+  app:
+    build: ..
+    image: ege-tutor:latest
+    restart: unless-stopped
+    env_file: /etc/ege-tutor/web.env  # секрет подписи cookie, создаётся при установке
+    volumes:
+      - /var/lib/ege-tutor:/data  # база, пароль (хеш), копии — вне Git и вне контейнера
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      EGE_SITE_ADDRESS: ${EGE_SITE_ADDRESS:?нужен адрес сайта в /etc/ege-tutor/compose.env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

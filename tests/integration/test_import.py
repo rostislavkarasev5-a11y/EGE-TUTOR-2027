@@ -192,6 +192,16 @@ def test_assets_are_copied_by_hash(tutor, write_file):
     assert stored.name == f"{asset.sha256}.txt"
 
 
+def test_assets_outside_task_folder_are_rejected(tutor, write_file, tmp_path):
+    # Файл задач (например, загруженный на сайт) не должен дотягиваться до чужих файлов.
+    (tmp_path / "secret.txt").write_text("личное", encoding="utf-8")
+    text = _one_task(subject="informatics", exam_item=17, skills="[I17.sequences]")
+    text = text.replace("    answer:", "    assets: [../secret.txt]\n    answer:")
+    report = tutor.preview_import(write_file("t.yaml", text))
+    assert any("рядом с файлом задач" in m for m in _errors_of(report, 1))
+    assert report.accepted == []
+
+
 def test_csv_cp1251_with_semicolons(tutor, write_file):
     text = (
         "subject;exam_item;statement;answer;source;source_ref;skills\r\n"

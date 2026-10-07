@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}EGE-TUTOR-2027{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">EGE-TUTOR</a>
+  {% if logged_in %}
+  <nav>
+    <a href="/">Главная</a>
+    <a href="/tasks">Задачи</a>
+    <a href="/review">Проверка</a>
+    <a href="/attempts">История</a>
+    <a href="/import">Импорт</a>
+    <a href="/profile">Профиль</a>
+    <form method="post" action="/logout" class="inline">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="link" type="submit">Выйти</button>
+    </form>
+  </nav>
+  {% endif %}
+</header>
+<main>
+  {% for kind, text in messages %}
+  <p class="flash {{ kind }}">{{ text }}</p>
+  {% endfor %}
+  {% block content %}{% endblock %}
+</main>
+<footer>EGE-TUTOR-2027 {{ version }}</footer>
+{% block scripts %}{% endblock %}
+</body>
+</html>

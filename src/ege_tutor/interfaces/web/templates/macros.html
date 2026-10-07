@@ -1,0 +1,40 @@
+{% macro source(task) -%}
+<span class="source {% if task.source == AI_SOURCE %}ai{% endif %}">{{ SOURCE_LABELS[task.source] }}</span>
+{%- endmacro %}
+
+{% macro statement(task) -%}
+<section class="card">
+  <h2>Задача {{ task.id }} · {{ SUBJECT_NAMES[task.subject] }} · задание №{{ task.exam_item }}</h2>
+  <div class="statement">{{ task.statement }}</div>
+  <p class="meta">Источник: {{ source(task) }} — {{ task.source_ref }}</p>
+  {% if task.assets %}
+  <p class="meta">Файлы:
+    {% for asset in task.assets %}
+    <a href="/tasks/{{ task.id }}/files/{{ loop.index0 }}" download>{{ asset.file_name }}</a>{% if not loop.last %}, {% endif %}
+    {% endfor %}
+  </p>
+  {% endif %}
+</section>
+{%- endmacro %}
+
+{% macro answer_block(task) -%}
+<section class="card answer">
+  <p>Правильный ответ: <strong>{{ task|display_answer }}</strong></p>
+  {% if task.solution %}
+  <h3>Решение</h3>
+  <div class="statement">{{ task.solution }}</div>
+  {% endif %}
+</section>
+{%- endmacro %}
+
+{% macro csrf_field() -%}
+<input type="hidden" name="csrf" value="{{ csrf }}">
+{%- endmacro %}
+
+{% macro subject_select(selected) -%}
+<select name="subject">
+  <option value="" {% if not selected %}selected{% endif %}>Любой предмет</option>
+  <option value="math" {% if selected in ("math", "MATH_PROFILE") %}selected{% endif %}>Математика</option>
+  <option value="informatics" {% if selected in ("informatics", "INFORMATICS") %}selected{% endif %}>Информатика</option>
+</select>
+{%- endmacro %}

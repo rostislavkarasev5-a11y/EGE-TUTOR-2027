@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Вход · EGE-TUTOR-2027{% endblock %}
+{% block content %}
+<section class="card narrow">
+  <h1>Вход</h1>
+  {% if not password_set %}
+  <p class="flash warning">Пароль ещё не задан. На сервере выполни команду
+    <code>ege-web set-password</code> (см. инструкцию по установке).</p>
+  {% endif %}
+  {% if error %}<p class="flash error">{{ error }}</p>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>Пароль
+      <input type="password" name="password" autocomplete="current-password" required autofocus>
+    </label>
+    <button type="submit">Войти</button>
+  </form>
+</section>
+{% endblock %}

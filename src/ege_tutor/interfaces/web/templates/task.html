@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "macros.html" import statement, answer_block, csrf_field with context %}
+{% block content %}
+{{ statement(task) }}
+<section class="card">
+  <p class="meta">Проверка ответа: {{ STATUS_NAMES[task.verification_status] }}
+    {% if task.source_version %} · версия источника: {{ task.source_version }}{% endif %}
+    {% if task.skills %} · навыки: {{ task.skills|join(", ") }}{% endif %}</p>
+  {% if reason %}
+  <p class="flash warning">Решать пока нельзя: {{ reason }}.
+    {% if task.verification_status == "UNVERIFIED" %}<a href="/review">Проверить ответы</a>.{% endif %}</p>
+  {% else %}
+  <form method="post" action="/tasks/{{ task.id }}/start">
+    {{ csrf_field() }}
+    <button type="submit">Решать эту задачу</button>
+  </form>
+  {% endif %}
+  {% if not show_answer %}
+  <p><a href="/tasks/{{ task.id }}?answer=1">Показать ответ и решение</a>
+    <span class="meta">(без попытки; если хочешь решать сам — не открывай)</span></p>
+  {% endif %}
+</section>
+{% if show_answer %}{{ answer_block(task) }}{% endif %}
+{% endblock %}

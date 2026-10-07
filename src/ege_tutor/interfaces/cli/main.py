@@ -165,6 +165,21 @@ def init() -> None:
     console.print(f"[green]База готова:[/] {tutor.settings.data_dir}")
 
 
+@app.command()
+def backup(
+    folder: Annotated[
+        Path | None, typer.Option("--dir", help="Куда сохранить (по умолчанию data/backups).")
+    ] = None,
+    keep: Annotated[int, typer.Option("--keep", help="Сколько последних копий хранить.")] = 14,
+) -> None:
+    """Сделать резервную копию базы. Старые копии сверх --keep удаляются."""
+    try:
+        dest = _tutor().backup(folder, keep)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(f"[green]Копия базы сохранена:[/] {dest}")
+
+
 # ── профиль ─────────────────────────────────────────────────────────────────
 
 

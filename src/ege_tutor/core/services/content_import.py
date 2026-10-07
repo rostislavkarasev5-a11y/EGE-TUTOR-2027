@@ -333,7 +333,11 @@ def _validate_record(
     asset_paths = []
     for name in _split_list(record.get("assets")):
         path = (base_dir / name).resolve()
-        if not path.is_file():
+        if not path.is_relative_to(base_dir.resolve()):
+            # Файлы берутся только из папки с файлом задач: иначе через импорт
+            # (например, загруженный на сайт) можно было бы прочитать чужие файлы.
+            check.error(f"assets: файл должен лежать рядом с файлом задач: {name}")
+        elif not path.is_file():
             check.error(f"assets: файл не найден: {name}")
         elif path.stat().st_size > MAX_ASSET_BYTES:
             check.error(f"assets: файл больше 50 МБ: {name}")

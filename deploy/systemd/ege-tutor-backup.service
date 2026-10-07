@@ -1,0 +1,7 @@
+[Unit]
+Description=EGE-TUTOR-2027: резервная копия базы
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/ege-tutor/deploy/backup.sh

@@ -4,6 +4,7 @@ import datetime as dt
 import hashlib
 import json
 import shutil
+import sqlite3
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -86,6 +87,20 @@ class SqlRepository:
 
     def is_ready(self) -> bool:
         return is_migrated(self._engine)
+
+    def backup_to(self, dest: Path) -> None:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        with self._engine.connect() as conn:
+            source = conn.connection.driver_connection
+            target = sqlite3.connect(dest)
+            try:
+                source.backup(target)  # встроенный механизм SQLite: копия согласована
+                (result,) = target.execute("PRAGMA integrity_check").fetchone()
+            finally:
+                target.close()
+        if result != "ok":
+            dest.unlink(missing_ok=True)
+            raise RepositoryError(f"копия базы повреждена: {result}")
 
     # ── профиль ─────────────────────────────────────────────────────────────
 

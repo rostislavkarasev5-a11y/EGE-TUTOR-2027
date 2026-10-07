@@ -17,7 +17,7 @@
 
 ## 2. Публичный репозиторий и данные
 
-Репозиторий публичный. В Git попадают только код, тесты, документация, конфигурация по умолчанию и контент, который можно публиковать. Только на компьютере пользователя: база данных (`data/`), задачи из сборников и ФИПИ (`data/private_content/`), ключи (`.env`), локальные настройки (`config/local.toml`). Защита: `.gitignore` и `scripts/check_secrets.py` в CI (ADR-0004).
+Репозиторий публичный. В Git попадают только код, тесты, документация, конфигурация по умолчанию и контент, который можно публиковать. Только на компьютере пользователя или на его собственном сервере (ADR-0013): база данных (`data/`), задачи из сборников и ФИПИ (`data/private_content/`), ключи (`.env`), локальные настройки (`config/local.toml`). Защита: `.gitignore` и `scripts/check_secrets.py` в CI (ADR-0004).
 
 ## 3. Процесс разработки
 
@@ -37,7 +37,7 @@
 | Sandbox | свой модуль: Linux-изоляция или **Docker** | Подробно в разделе 9. |
 | Тесты | **pytest**, **hypothesis** (для формул mastery), **ruff** (стиль) | Стандарт в Python. |
 | CI | **GitHub Actions** | Тесты запускаются автоматически на каждый PR. |
-| Web (будущее) | **FastAPI** + простой фронтенд (HTMX или React) | FastAPI вызывает тот же CORE, что и CLI. |
+| Web (Phase 12, сделана сразу после Phase 2, ADR-0013) | **FastAPI** + шаблоны **Jinja2**, без отдельного фронтенда; на сервере Docker Compose + **Caddy** (https) | FastAPI вызывает тот же CORE, что и CLI. |
 
 **Что я поменял относительно твоего предварительного стека и почему:**
 - Добавил **SQLAlchemy + Alembic** поверх SQLite. Без них переход на Web/PostgreSQL и любое изменение схемы потребуют ручной переделки. Это небольшая сложность сейчас, которая убирает большую потом.
@@ -351,10 +351,12 @@ EGE-TUTOR-2027/
 │   ├── sandbox/               UnavailableSandbox; (Phase 3) Docker, WSL2/Linux-native
 │   └── interfaces/
 │       ├── cli/               команды Typer
-│       └── web/               (Phase 12) FastAPI
+│       └── web/               (Phase 12, ADR-0013) FastAPI: страницы, вход, загрузки
 ├── tests/
 │   ├── smoke/  unit/  integration/   (дальше: sandbox/, content/)
 ├── .github/workflows/ci.yml   CI: uv, проверка секретов, ruff, pytest (Linux + Windows)
+├── deploy/                    сервер: docker-compose, Caddy, установка, автообновление, бэкапы
+├── Dockerfile                 образ сайта (данные — в томе /data, не в образе)
 ├── install.bat / update.bat   установка и обновление двойным щелчком
 ├── ege-console.bat            окно с командой ege
 └── data/                      ТОЛЬКО на компьютере пользователя, закрыто .gitignore

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field with context %}
+{% block content %}
+<h1>Импорт задач</h1>
+<section class="card">
+  <p>Загрузи файл <code>.yaml</code> или <code>.csv</code> по шаблону из папки
+    <code>content/templates</code>. Если к задачам есть файлы (например, <code>numbers.txt</code>),
+    упакуй файл задач и эти файлы в архив <code>.zip</code>: файл задач — в корень архива.</p>
+  <form method="post" action="/import/preview" enctype="multipart/form-data" class="row">
+    {{ csrf_field() }}
+    <input type="file" name="file" accept=".yaml,.yml,.csv,.zip" required>
+    <button type="submit">Проверить файл</button>
+  </form>
+  <p class="meta">Сначала будет только проверка, в базу ничего не запишется.</p>
+</section>
+
+<section class="card">
+  <h2>История импортов</h2>
+  {% if not batches %}
+  <p>Импортов пока не было.</p>
+  {% else %}
+  <div class="scroll">
+  <table>
+    <tr><th>№</th><th>Когда</th><th>Файл</th><th>Добавлено</th><th>Отклонено</th><th>Статус</th><th></th></tr>
+    {% for b in batches %}
+    <tr>
+      <td>{{ b.id }}</td>
+      <td>{{ b.created_at|utc_time }}</td>
+      <td>{{ b.file_name }}</td>
+      <td>{{ b.added_count }}</td>
+      <td>{{ b.rejected_count }}</td>
+      <td>{{ "действует" if b.status == ImportBatchStatus.ACTIVE else "отменён" }}</td>
+      <td>{% if b.status == ImportBatchStatus.ACTIVE %}
+        <form method="post" action="/imports/{{ b.id }}/undo" class="inline">{{ csrf_field() }}
+          <button class="link" type="submit">Отменить</button></form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p class="meta">Отмена не удаляет задачи и попытки: задачи просто перестают выдаваться.</p>
+  {% endif %}
+</section>
+{% endblock %}

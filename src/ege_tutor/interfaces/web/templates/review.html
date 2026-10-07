@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "macros.html" import statement, answer_block, csrf_field with context %}
+{% block content %}
+<h1>Проверка эталонных ответов</h1>
+{% if task is none %}
+  <p>Непроверенных задач нет{% if skipped %} (пропущено: {{ skipped }}){% endif %}.</p>
+  {% if skipped %}
+  <form method="post" action="/review/0">{{ csrf_field() }}
+    <input type="hidden" name="decision" value="reset">
+    <button class="secondary" type="submit">Вернуться к пропущенным</button></form>
+  {% endif %}
+{% else %}
+  <p class="meta">Реши задачу сам или сверь с источником. Решать задачу можно только после проверки ответа.</p>
+  {{ statement(task) }}
+  {{ answer_block(task) }}
+  <section class="card">
+    <p>Ответ верный?</p>
+    <form method="post" action="/review/{{ task.id }}" class="row actions">
+      {{ csrf_field() }}
+      <button type="submit" name="decision" value="yes">Да, верный</button>
+      <button type="submit" name="decision" value="no" class="danger">Нет, неверный</button>
+      <button type="submit" name="decision" value="skip" class="secondary">Пропустить</button>
+    </form>
+    <p class="meta">«Нет» — задача станет спорной и не будет выдаваться.</p>
+  </section>
+{% endif %}
+{% endblock %}

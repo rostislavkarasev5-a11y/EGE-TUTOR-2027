@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>История попыток</h1>
+<p class="meta">Попытки никогда не удаляются. Время — UTC.</p>
+{% if not attempts %}
+<p>Попыток пока нет.</p>
+{% else %}
+<div class="scroll">
+<table>
+  <tr><th>№</th><th>Задача</th><th>Когда</th><th>Статус</th><th>Ответ</th><th>Итог</th><th>Время</th><th>Подсказка</th></tr>
+  {% for a in attempts %}
+  <tr>
+    <td><a href="/attempts/{{ a.id }}">{{ a.id }}</a></td>
+    <td><a href="/tasks/{{ a.task_id }}">{{ a.task_id }}</a> (№{{ a.exam_item }}, попытка {{ a.attempt_no }})</td>
+    <td>{{ a.started_at|utc_time }}</td>
+    <td>{{ ATTEMPT_STATUS_NAMES[a.status] }}</td>
+    <td>{{ a.answer or "—" }}</td>
+    <td>{% if a.verdict %}<span class="verdict-{{ a.verdict|lower }}">{{ VERDICT_NAMES[a.verdict] }}</span>{% else %}—{% endif %}</td>
+    <td>{{ a.time_spent_seconds|minutes }}</td>
+    <td>{{ a.max_hint_level or "—" }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+{% endblock %}
