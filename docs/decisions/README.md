@@ -24,3 +24,4 @@ ADR — короткая запись одного архитектурного 
 | [0012](0012-attempts-and-answer-checking.md) | Попытки, подсказки и проверка кратких ответов | Accepted |
 | [0013](0013-web-and-own-server.md) | Сайт на собственном сервере (VPS) | Accepted |
 | [0014](0014-sandbox-on-server.md) | Python Sandbox на сервере: отдельный контейнер без сети | Accepted |
+| [0016](0016-starter-bank-and-diagnostics.md) | Стартовый банк задач и адаптивная диагностика: детали | Proposed |
