@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -80,6 +81,16 @@ def _subject(text: str | None) -> Subject | None:
         raise _fail(f"неизвестный предмет «{text}». {SUBJECT_HELP}") from e
 
 
+def _table(**kwargs) -> Table:
+    # Только тонкие линии: их умеют рисовать и шрифты старых консолей Windows,
+    # а жирные линии там превращаются в «???».
+    return Table(box=box.SQUARE, **kwargs)
+
+
+def _panel(renderable: str, **kwargs) -> Panel:
+    return Panel(renderable, box=box.SQUARE, **kwargs)
+
+
 def _yes_no(value: bool) -> str:
     return "[green]готово[/]" if value else "[yellow]ещё нет[/]"
 
@@ -99,7 +110,7 @@ def info() -> None:
 
     console.print(f"[bold]EGE-TUTOR-2027[/] {state.version} · Phase {state.phase}")
 
-    exams = Table(title="Экзамены")
+    exams = _table(title="Экзамены")
     exams.add_column("Предмет")
     exams.add_column("Дата")
     exams.add_column("Осталось дней")
@@ -112,7 +123,7 @@ def info() -> None:
         exams.add_row(SUBJECT_NAMES[exam.subject], date_text, days_text)
     console.print(exams)
 
-    parts = Table(title="Компоненты")
+    parts = _table(title="Компоненты")
     parts.add_column("Компонент")
     parts.add_column("Статус")
     parts.add_row("Хранилище (Phase 1)", _yes_no(state.storage_ready))
@@ -159,7 +170,7 @@ def profile(
     except AppError as e:
         raise _fail(str(e)) from e
 
-    table = Table(title="Профиль")
+    table = _table(title="Профиль")
     table.add_column("Поле")
     table.add_column("Значение")
     table.add_row("Имя", current.display_name or "—")
@@ -182,7 +193,7 @@ def exam(subject: Annotated[str, typer.Argument(help=SUBJECT_HELP)]) -> None:
         raise _fail(f"неизвестный предмет «{subject}». {SUBJECT_HELP}") from e
     except AppError as e:
         raise _fail(str(e)) from e
-    table = Table(title=f"{SUBJECT_NAMES[parsed]}, ЕГЭ {spec.exam_year} ({spec.status})")
+    table = _table(title=f"{SUBJECT_NAMES[parsed]}, ЕГЭ {spec.exam_year} ({spec.status})")
     table.add_column("№", justify="right")
     table.add_column("Задание")
     table.add_column("Часть", justify="center")
@@ -207,7 +218,7 @@ def topics(
     tutor = _tutor()
     parsed = _subject(subject)
     for subj in [parsed] if parsed else list(Subject):
-        table = Table(title=SUBJECT_NAMES[subj])
+        table = _table(title=SUBJECT_NAMES[subj])
         table.add_column("Код")
         table.add_column("Тема / навык")
         table.add_column("Задания ЕГЭ")
@@ -236,7 +247,7 @@ def _print_report(report: ImportReport) -> None:
     ):
         if not issues:
             continue
-        table = Table(title=title, title_style=style)
+        table = _table(title=title, title_style=style)
         table.add_column("Задача", justify="right")
         table.add_column("Что не так")
         for issue in issues:
@@ -280,7 +291,7 @@ def imports() -> None:
     if not batches:
         console.print("Импортов пока не было.")
         return
-    table = Table(title="Импорты")
+    table = _table(title="Импорты")
     table.add_column("№", justify="right")
     table.add_column("Когда (UTC)")
     table.add_column("Файл")
@@ -336,7 +347,7 @@ def tasks(
     if not found:
         console.print("Задач не найдено.")
         return
-    table = Table(title="Задачи")
+    table = _table(title="Задачи")
     table.add_column("ID", justify="right")
     table.add_column("Предмет")
     table.add_column("№", justify="right")
@@ -369,7 +380,7 @@ def task(
     except AppError as e:
         raise _fail(str(e)) from e
     header = f"Задача {t.id} · {SUBJECT_NAMES[t.subject]} · задание №{t.exam_item}"
-    console.print(Panel(t.statement, title=header, title_align="left"))
+    console.print(_panel(t.statement, title=header, title_align="left"))
     console.print(f"Источник: {_source_text(t.source)} — {t.source_ref}")
     if t.source_version:
         console.print(f"Версия источника: {t.source_version}")
@@ -381,7 +392,7 @@ def task(
     if show_answer:
         console.print(f"Ответ: [bold]{t.answer or '—'}[/]")
         if t.solution:
-            console.print(Panel(t.solution, title="Решение", title_align="left"))
+            console.print(_panel(t.solution, title="Решение", title_align="left"))
 
 
 def run() -> None:

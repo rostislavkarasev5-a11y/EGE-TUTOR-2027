@@ -97,3 +97,29 @@ def test_cli_survives_non_utf8_console():
     )
     assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
     assert "ЕГЭ".encode() in result.stdout
+
+
+def _box_chars(text: str) -> set[str]:
+    return {ch for ch in text if 0x2500 <= ord(ch) <= 0x257F}
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["info"], ["profile"], ["exam", "math"], ["topics", "--skills"], ["imports"], ["tasks"]],
+)
+def test_table_lines_fit_old_windows_console(args):
+    """Линии таблиц должны быть из кодовой страницы cp866: их рисуют старые шрифты консоли."""
+    invoke("import", SAMPLE, "--apply")
+    result = invoke(*args)
+    assert result.exit_code == 0, result.output
+    for ch in _box_chars(result.output):
+        ch.encode("cp866")  # UnicodeEncodeError → такую линию консоль покажет как «?»
+
+
+def test_task_panel_fits_old_windows_console():
+    invoke("import", SAMPLE, "--apply")
+    result = invoke("task", "1", "--answer")
+    assert result.exit_code == 0, result.output
+    assert _box_chars(result.output)
+    for ch in _box_chars(result.output):
+        ch.encode("cp866")
