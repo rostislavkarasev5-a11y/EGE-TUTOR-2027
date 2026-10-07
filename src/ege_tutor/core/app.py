@@ -5,6 +5,7 @@
 """
 
 import datetime as dt
+from collections.abc import Collection
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -36,6 +37,8 @@ from ege_tutor.subjects import tutor_for
 
 CURRENT_PHASE = 2
 DB_FILE_NAME = "ege.db"
+BACKUP_PREFIX = "ege-"
+DEFAULT_BACKUPS_KEPT = 14
 
 
 @dataclass(frozen=True)
@@ -113,6 +116,34 @@ class TutorApp:
 
     def close(self) -> None:
         self.repository.close()
+
+    # ── резервные копии ─────────────────────────────────────────────────────
+
+    @property
+    def backup_dir(self) -> Path:
+        return self.settings.data_dir / "backups"
+
+    def backup(self, dest_dir: Path | None = None, keep: int = DEFAULT_BACKUPS_KEPT) -> Path:
+        """Сделать копию базы (с проверкой целостности) и оставить только keep последних."""
+        if keep < 1:
+            raise AppError("нужно хранить хотя бы одну копию")
+        folder = dest_dir or self.backup_dir
+        stamp = self.clock.now().strftime("%Y%m%d-%H%M%S")
+        dest = folder / f"{BACKUP_PREFIX}{stamp}.db"
+        suffix = 1
+        while dest.exists():
+            dest = folder / f"{BACKUP_PREFIX}{stamp}-{suffix}.db"
+            suffix += 1
+        try:
+            self.repository.backup_to(dest)
+        except RepositoryError as e:
+            raise AppError(str(e)) from e
+        copies = sorted(
+            folder.glob(f"{BACKUP_PREFIX}*.db"), key=lambda p: (p.stat().st_mtime, p.name)
+        )
+        for old in copies[:-keep]:
+            old.unlink()
+        return dest
 
     # ── состояние ───────────────────────────────────────────────────────────
 
@@ -266,6 +297,15 @@ class TutorApp:
     def abandon_attempt(self, attempt_id: int) -> Attempt:
         return self.practice.abandon(attempt_id)
 
+    def attempt(self, attempt_id: int) -> Attempt:
+        attempt = self.repository.get_attempt(attempt_id)
+        if attempt is None:
+            raise AppError(f"попытка №{attempt_id} не найдена")
+        return attempt
+
+    def shown_hints(self, attempt_id: int) -> list[ShownHint]:
+        return self.practice.shown_hints(attempt_id)
+
     def attempts(self, task_id: int | None = None, limit: int = 50) -> list[Attempt]:
         return self.repository.list_attempts(task_id, limit)
 
@@ -273,6 +313,13 @@ class TutorApp:
         return self.practice.review(task_id, answer_is_correct)
 
     def next_unverified_task(
-        self, subject: Subject | None = None, exam_item: int | None = None
+        self,
+        subject: Subject | None = None,
+        exam_item: int | None = None,
+        exclude: Collection[int] = (),
     ) -> Task | None:
-        return self.practice.next_unverified(subject, exam_item)
+        return self.practice.next_unverified(subject, exam_item, exclude)
+
+    def why_not_practicable(self, task: Task) -> str | None:
+        """Почему задачу нельзя решать, или None, если можно."""
+        return self.practice.why_not_practicable(task)

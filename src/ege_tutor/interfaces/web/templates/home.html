@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field, subject_select with context %}
+{% block content %}
+<h1>{% if profile.display_name %}Привет, {{ profile.display_name }}!{% else %}Привет!{% endif %}</h1>
+
+{% if has_unverified %}
+<p class="flash warning">Есть задачи с непроверенным ответом. Их можно решать только после проверки:
+  <a href="/review">проверить</a>.</p>
+{% endif %}
+
+<section class="card">
+  <h2>Решать задачи</h2>
+  <form method="post" action="/solve" class="row">
+    {{ csrf_field() }}
+    {{ subject_select("") }}
+    <input type="number" name="item" min="1" max="27" placeholder="№ задания" inputmode="numeric">
+    <button type="submit">Дать задачу</button>
+  </form>
+  <p class="meta">Сначала выдаются задачи, которые ты решал реже и давнее всего.</p>
+</section>
+
+<section class="card">
+  <h2>Экзамены</h2>
+  <table>
+    <tr><th>Предмет</th><th>Дата</th><th>Осталось дней</th><th>Цель</th></tr>
+    {% for exam in info.exams %}
+    <tr>
+      <td>{{ SUBJECT_NAMES[exam.subject] }}</td>
+      <td>{% if exam.date %}{{ exam.date.strftime("%d.%m.%Y") }}{% else %}не утверждена (TBD){% endif %}</td>
+      <td>{{ exam.days_left if exam.days_left is not none else "—" }}</td>
+      <td>{{ profile.targets[exam.subject] }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section class="card">
+  <h2>Состояние</h2>
+  <ul class="plain">
+    <li>Задач в базе: {{ info.task_count }}</li>
+    <li>Python Sandbox (Phase 3): {{ "готов" if info.sandbox_available else "ещё нет" }}</li>
+    <li>ИИ (Phase 6): {{ "подключён" if info.ai_available else "не подключён" }}</li>
+  </ul>
+  <form method="post" action="/backup">
+    {{ csrf_field() }}
+    <button type="submit" class="secondary">Скачать копию базы</button>
+  </form>
+</section>
+{% endblock %}

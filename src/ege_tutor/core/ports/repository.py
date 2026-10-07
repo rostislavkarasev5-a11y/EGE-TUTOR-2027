@@ -47,6 +47,10 @@ class Repository(Protocol):
         """Освободить файлы и соединения."""
         ...
 
+    def backup_to(self, dest: Path) -> None:
+        """Записать согласованную копию всей базы в файл dest и проверить её целостность."""
+        ...
+
     # ── профиль ──
     def get_profile(self) -> StudentProfile: ...
 

@@ -1,0 +1,8 @@
+[Unit]
+Description=EGE-TUTOR-2027: обновление сайта из ветки main
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /opt/ege-tutor/deploy/update.sh

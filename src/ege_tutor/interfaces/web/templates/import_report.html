@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field with context %}
+{% block content %}
+<h1>Проверка файла {{ report.file_name }}</h1>
+<section class="card">
+  <p>Задач в файле: {{ report.total }} · годных: <strong>{{ report.accepted|length }}</strong>
+    · с ошибками: {{ report.rejected_rows|length }}</p>
+  {% for title, issues, kind in (("Ошибки", report.errors, "error"), ("Предупреждения", report.warnings, "warning")) %}
+    {% if issues %}
+    <h2>{{ title }}</h2>
+    <table>
+      <tr><th>Задача</th><th>Что не так</th></tr>
+      {% for issue in issues %}
+      <tr class="{{ kind }}"><td>{{ "файл" if issue.row is none else issue.row }}</td><td>{{ issue.message }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  {% endfor %}
+  {% if token %}
+  <form method="post" action="/import/apply" class="row actions">
+    {{ csrf_field() }}
+    <input type="hidden" name="token" value="{{ token }}">
+    <button type="submit">Добавить годные задачи ({{ report.accepted|length }})</button>
+    <a href="/import">Отмена</a>
+  </form>
+  {% else %}
+  <p class="flash error">Добавить нечего. Исправь файл и загрузи заново.</p>
+  <p><a href="/import">Назад</a></p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "macros.html" import statement, answer_block, csrf_field with context %}
+{% block content %}
+{{ statement(task) }}
+
+<section class="card">
+  <p class="meta">Попытка №{{ attempt.attempt_no }} · норматив {{ attempt.time_norm_seconds|minutes }}
+  {% if attempt.status == AttemptStatus.IN_PROGRESS %}
+    · прошло <span id="timer" data-started="{{ started_iso }}" data-norm="{{ attempt.time_norm_seconds or '' }}">0:00</span>
+  {% endif %}</p>
+
+  {% if attempt.status == AttemptStatus.IN_PROGRESS and attempt.max_hint_level and not hints %}
+  <p class="flash warning">Подсказки из прошлой попытки учтены (уровень {{ attempt.max_hint_level }}).</p>
+  {% endif %}
+
+  {% if hints %}
+  <div id="hints">
+    {% for h in hints %}
+    <div class="hint">
+      <h3>Уровень {{ h.level }}: {{ HINT_NAMES[h.level] }}</h3>
+      <div class="statement">{{ h.text }}</div>
+    </div>
+    {% endfor %}
+    <p class="meta">Самостоятельность этой попытки теперь {{ hints[-1].independence }}.</p>
+  </div>
+  {% endif %}
+
+  {% if attempt.status == AttemptStatus.IN_PROGRESS %}
+  <form method="post" action="/attempts/{{ attempt.id }}/answer" class="row">
+    {{ csrf_field() }}
+    <input type="text" name="answer" autocomplete="off" autocapitalize="off" spellcheck="false"
+      placeholder="Ответ, например 0,4" required autofocus>
+    <button type="submit">Проверить</button>
+  </form>
+  <div class="row actions">
+    <form method="post" action="/attempts/{{ attempt.id }}/hint">{{ csrf_field() }}<button class="secondary" type="submit">Подсказка</button></form>
+    <form method="post" action="/attempts/{{ attempt.id }}/give-up">{{ csrf_field() }}<button class="secondary" type="submit">Сдаюсь</button></form>
+    <form method="post" action="/attempts/{{ attempt.id }}/similar">{{ csrf_field() }}<button class="secondary" type="submit">Похожая задача</button></form>
+    <form method="post" action="/attempts/{{ attempt.id }}/abandon">{{ csrf_field() }}<button class="link" type="submit">Выйти</button></form>
+  </div>
+  <p class="meta">Ответ пиши как на бланке ЕГЭ: целое число или десятичная дробь через запятую.</p>
+  {% else %}
+    {% if attempt.status == AttemptStatus.ANSWERED %}
+    <p class="result verdict-{{ attempt.verdict|lower }}">Итог: {{ VERDICT_NAMES[attempt.verdict] }}
+      <span class="meta">(твой ответ: {{ attempt.answer }})</span></p>
+    {% if explanation %}<p>{{ explanation }}</p>{% endif %}
+    {% elif attempt.status == AttemptStatus.GAVE_UP %}
+    <p class="result">Ты сдался на этой задаче.</p>
+    {% else %}
+    <p class="result">Попытка брошена.</p>
+    {% endif %}
+    <p>Время: {{ attempt.time_spent_seconds|minutes }} из {{ attempt.time_norm_seconds|minutes }}
+      {% if attempt.within_norm is true %} — в нормативе{% elif attempt.within_norm is false %} — дольше норматива{% endif %}</p>
+    {% if attempt.correct %}
+      {% if attempt.independent %}<p class="flash success">Решено самостоятельно.</p>
+      {% else %}<p>Решено с подсказкой уровня {{ attempt.max_hint_level }}: это не считается самостоятельным решением.</p>{% endif %}
+    {% endif %}
+    <div class="row actions">
+      {% if not attempt.correct %}
+      <form method="post" action="/tasks/{{ task.id }}/start">{{ csrf_field() }}<button type="submit">Попробовать ещё раз</button></form>
+      {% endif %}
+      <form method="post" action="/solve">{{ csrf_field() }}
+        <input type="hidden" name="subject" value="{{ filter_subject }}">
+        <input type="hidden" name="item" value="{{ filter_item }}">
+        <button type="submit" {% if not attempt.correct %}class="secondary"{% endif %}>Следующая задача</button></form>
+      <form method="post" action="/attempts/{{ attempt.id }}/similar">{{ csrf_field() }}<button class="secondary" type="submit">Похожая задача</button></form>
+    </div>
+    {% if not reveal %}
+    <p><a href="/attempts/{{ attempt.id }}?reveal=1">Показать ответ и решение</a></p>
+    {% endif %}
+  {% endif %}
+</section>
+{% if reveal and attempt.status != AttemptStatus.IN_PROGRESS %}{{ answer_block(task) }}{% endif %}
+{% endblock %}
+{% block scripts %}<script src="/static/timer.js"></script>{% endblock %}

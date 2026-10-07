@@ -1,0 +1,9 @@
+[Unit]
+Description=EGE-TUTOR-2027: проверять обновления раз в 10 минут
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target

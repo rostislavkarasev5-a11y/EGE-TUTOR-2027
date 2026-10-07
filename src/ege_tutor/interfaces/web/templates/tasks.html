@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "macros.html" import source, subject_select with context %}
+{% block content %}
+<h1>Задачи</h1>
+<form method="get" action="/tasks" class="row">
+  {{ subject_select(subject) }}
+  <input type="number" name="item" min="1" max="27" placeholder="№ задания" value="{{ item }}" inputmode="numeric">
+  <select name="source">
+    <option value="">Любой источник</option>
+    {% for s in TaskSource %}
+    <option value="{{ s.value }}" {% if source == s.value %}selected{% endif %}>{{ SOURCE_LABELS[s] }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secondary">Показать</button>
+</form>
+{% if not tasks %}
+<p>Задач нет. Добавь их на странице <a href="/import">«Импорт»</a>.</p>
+{% else %}
+<div class="scroll">
+<table>
+  <tr><th>ID</th><th>Предмет</th><th>№</th><th>Условие</th><th>Источник</th><th>Проверка</th></tr>
+  {% for t in tasks %}
+  <tr>
+    <td><a href="/tasks/{{ t.id }}">{{ t.id }}</a></td>
+    <td>{{ SUBJECT_NAMES[t.subject] }}</td>
+    <td>{{ t.exam_item }}</td>
+    <td><a href="/tasks/{{ t.id }}">{{ t.statement|truncate(80) }}</a></td>
+    <td>{{ source(t) }}</td>
+    <td class="status-{{ t.verification_status|lower }}">{{ STATUS_NAMES[t.verification_status] }}</td>
+  </tr>
+  {% endfor %}
+</table>
+</div>
+{% endif %}
+{% endblock %}

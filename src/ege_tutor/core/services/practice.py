@@ -10,7 +10,7 @@
 """
 
 import datetime as dt
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 
 from ege_tutor.config import MasteryConfig
@@ -183,6 +183,28 @@ class PracticeService:
             independence=self._mastery.independence.for_hint_level(level),
         )
 
+    def shown_hints(self, attempt_id: int) -> list[ShownHint]:
+        """Подсказки, уже показанные в этой попытке, по порядку показа."""
+        attempt = self._repo.get_attempt(attempt_id)
+        if attempt is None:
+            raise AppError(f"попытка №{attempt_id} не найдена")
+        task = self._task(attempt.task_id)
+        shown = []
+        for event in self._repo.list_hint_events(attempt_id):
+            text = (
+                task.solution
+                if event.level == SOLUTION_LEVEL
+                else task_hint_text(task, event.level)
+            )
+            shown.append(
+                ShownHint(
+                    level=event.level,
+                    text=text or "",
+                    independence=self._mastery.independence.for_hint_level(event.level),
+                )
+            )
+        return shown
+
     def submit(self, attempt_id: int, answer: str) -> AttemptResult:
         attempt = self._open_attempt(attempt_id)
         if not answer.strip():
@@ -226,12 +248,17 @@ class PracticeService:
             raise AppError(str(e)) from e
 
     def next_unverified(
-        self, subject: Subject | None = None, exam_item: int | None = None
+        self,
+        subject: Subject | None = None,
+        exam_item: int | None = None,
+        exclude: Collection[int] = (),
     ) -> Task | None:
+        """Следующая задача, ответ которой нужно сверить. exclude — пропущенные задачи."""
         for task in self._repo.list_tasks(subject, exam_item, None, limit=100_000):
             if (
                 task.verification_status == VerificationStatus.UNVERIFIED
                 and task.answer is not None
+                and task.id not in exclude
             ):
                 return task
         return None
