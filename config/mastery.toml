@@ -1,5 +1,5 @@
 # Mastery v0 — СТАРТОВАЯ ЭКСПЕРИМЕНТАЛЬНАЯ модель, а не окончательная истина (ADR-0006).
-# Сама модель реализуется в Phase 4. Здесь — конфигурируемые коэффициенты.
+# Модель реализована в Phase 4; детали формул — ADR-0015. Здесь — конфигурируемые коэффициенты.
 #
 # Свидетельство попытки (всегда в диапазоне 0..1):
 #   e = correctness × independence × time_factor × repeat_factor
@@ -44,12 +44,49 @@ diagnostic = 1.5
 mock = 2.0
 exam = 2.0
 
+[evidence]
+# M_raw — взвешенное среднее свидетельств; каждая следующая попытка по навыку
+# уменьшает вклад предыдущих в recency_decay раз (ADR-0015).
+recency_decay = 0.8
+# уверенность = 1 − exp(−сумма весов / confidence_scale): мало попыток — низкая уверенность.
+confidence_scale = 3.0
+
 [forgetting]
+# M = M_raw × exp(−дни_с_последней_практики / стабильность)
 initial_stability_days = 3.0
+# Ниже этого прогноза навык попадает в очередь повторений.
 review_threshold = 0.7
+# Успех (e ≥ success_threshold) не раньше чем через min_review_gap_days дней после прошлой
+# практики увеличивает стабильность в stability_growth раз (не больше max_stability_days).
+success_threshold = 0.6
+min_review_gap_days = 1.0
+stability_growth = 2.0
+max_stability_days = 180.0
+# Провал (e < failure_threshold) уменьшает стабильность (не меньше начальной).
+failure_threshold = 0.3
+stability_after_failure = 0.5
 
 [attempts]
 # Если попытка на задачу закончилась неудачно, а ты видел в ней подсказки, то следующая попытка
 # на ту же задачу в течение этого времени начинается с того же уровня подсказки:
 # подсказку ты уже знаешь, поэтому решение не считается самостоятельным.
 hint_carryover_hours = 12
+
+[mistakes]
+# Приоритет паттерна = база_категории × (1 + 0.5 × (повторов − 1)) × exp(−дни / freshness_days).
+freshness_days = 14.0
+# Паттерн закрывается после стольких самостоятельных верных решений подряд в разные дни.
+close_after_independent = 3
+
+[mistakes.category_base]
+TOPIC_GAP = 1.0
+ALGORITHM = 1.0
+FORMULA = 0.9
+CONDITION = 0.8
+STRATEGY = 0.8
+PROGRAMMING = 0.8
+ARITHMETIC = 0.7
+SYNTAX = 0.6
+TIME = 0.6
+CARELESS = 0.5
+FORMATTING = 0.4

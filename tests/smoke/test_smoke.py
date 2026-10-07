@@ -23,7 +23,7 @@ def test_default_config_loads():
 def test_tutor_app_creates_with_defaults(data_dir):
     tutor = TutorApp.create()
     info = tutor.info()
-    assert info.phase == 3
+    assert info.phase == 4
     assert not info.ai_available
     assert not info.sandbox_available
     assert info.storage_ready

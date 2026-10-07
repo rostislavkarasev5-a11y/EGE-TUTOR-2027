@@ -8,7 +8,7 @@ import sqlite3
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from sqlalchemy import Engine, delete, func, select
+from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from ege_tutor.core.domain import (
@@ -16,6 +16,7 @@ from ege_tutor.core.domain import (
     AttemptMode,
     AttemptStatus,
     Catalog,
+    ClassifiedBy,
     CodeRun,
     CodeVerdict,
     ExamSpec,
@@ -23,6 +24,13 @@ from ege_tutor.core.domain import (
     HintEvent,
     ImportBatch,
     ImportBatchStatus,
+    MasteryRecord,
+    MasterySnapshot,
+    Mistake,
+    MistakeCategory,
+    MistakeDraft,
+    MistakePattern,
+    Prediction,
     Skill,
     StudentProfile,
     Subject,
@@ -45,6 +53,11 @@ from ege_tutor.db.models import (
     ExamSpecRow,
     HintEventRow,
     ImportBatchRow,
+    MasteryRow,
+    MasterySnapshotRow,
+    MistakePatternRow,
+    MistakeRow,
+    PredictionRow,
     SkillExamItemRow,
     SkillPrerequisiteRow,
     SkillRow,
@@ -677,3 +690,280 @@ class SqlRepository:
             query = query.where(CodeRunRow.attempt_id == attempt_id)
         with self._session() as s:
             return [self._code_run(r) for r in s.scalars(query.limit(limit))]
+
+    # ── mastery, ошибки, повторения (Phase 4) ──
+
+    def skill_history(self, skill_code: str) -> list[tuple[Attempt, int | None]]:
+        """Завершённые попытки на задачи с навыком (с ответом или сдался) и сложность задачи."""
+        query = (
+            select(AttemptRow, TaskRow.difficulty)
+            .join(TaskRow, TaskRow.id == AttemptRow.task_id)
+            .join(TaskSkillRow, TaskSkillRow.task_id == TaskRow.id)
+            .where(
+                TaskSkillRow.skill_code == skill_code,
+                AttemptRow.status.in_([AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP]),
+            )
+            .order_by(AttemptRow.finished_at, AttemptRow.id)
+        )
+        with self._session() as s:
+            return [(self._attempt(row), difficulty) for row, difficulty in s.execute(query)]
+
+    def practiced_skills(self) -> list[str]:
+        """Навыки, по которым есть хотя бы одна завершённая попытка."""
+        query = (
+            select(TaskSkillRow.skill_code)
+            .join(AttemptRow, AttemptRow.task_id == TaskSkillRow.task_id)
+            .where(AttemptRow.status.in_([AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP]))
+            .distinct()
+            .order_by(TaskSkillRow.skill_code)
+        )
+        with self._session() as s:
+            return list(s.scalars(query))
+
+    @staticmethod
+    def _mastery(row: MasteryRow) -> MasteryRecord:
+        return MasteryRecord(
+            skill_code=row.skill_code,
+            model_version=row.model_version,
+            value_raw=row.value_raw,
+            confidence=row.confidence,
+            stability_days=row.stability_days,
+            attempts=row.attempts,
+            last_practiced_at=row.last_practiced_at,
+            next_review_on=row.next_review_on,
+            updated_at=row.updated_at,
+        )
+
+    def save_mastery(
+        self, records: Sequence[MasteryRecord], snapshots: Sequence[MasterySnapshot]
+    ) -> None:
+        """Записать состояния навыков и снимки за день одной транзакцией.
+
+        Снимок за дату перезаписывается только для той же даты; прошлые дни не трогаются,
+        потому что вызывающий передаёт только сегодняшние снимки.
+        """
+        with self._session.begin() as s:
+            for r in records:
+                row = s.get(MasteryRow, r.skill_code) or MasteryRow(skill_code=r.skill_code)
+                row.model_version = r.model_version
+                row.value_raw = r.value_raw
+                row.confidence = r.confidence
+                row.stability_days = r.stability_days
+                row.attempts = r.attempts
+                row.last_practiced_at = r.last_practiced_at
+                row.next_review_on = r.next_review_on
+                row.updated_at = r.updated_at
+                s.add(row)
+            for snap in snapshots:
+                key = (snap.snapshot_date, snap.skill_code, snap.model_version)
+                row = s.get(MasterySnapshotRow, key) or MasterySnapshotRow(
+                    snapshot_date=snap.snapshot_date,
+                    skill_code=snap.skill_code,
+                    model_version=snap.model_version,
+                )
+                row.value = snap.value
+                row.value_raw = snap.value_raw
+                row.confidence = snap.confidence
+                s.add(row)
+
+    def list_mastery(self, skill_codes: Iterable[str] | None = None) -> list[MasteryRecord]:
+        query = select(MasteryRow).order_by(MasteryRow.skill_code)
+        if skill_codes is not None:
+            query = query.where(MasteryRow.skill_code.in_(list(skill_codes)))
+        with self._session() as s:
+            return [self._mastery(r) for r in s.scalars(query)]
+
+    def list_snapshots(
+        self, skill_code: str | None = None, since: dt.date | None = None
+    ) -> list[MasterySnapshot]:
+        query = select(MasterySnapshotRow).order_by(
+            MasterySnapshotRow.snapshot_date, MasterySnapshotRow.skill_code
+        )
+        if skill_code is not None:
+            query = query.where(MasterySnapshotRow.skill_code == skill_code)
+        if since is not None:
+            query = query.where(MasterySnapshotRow.snapshot_date >= since)
+        with self._session() as s:
+            return [
+                MasterySnapshot(
+                    r.snapshot_date,
+                    r.skill_code,
+                    r.model_version,
+                    r.value,
+                    r.value_raw,
+                    r.confidence,
+                )
+                for r in s.scalars(query)
+            ]
+
+    @staticmethod
+    def _prediction(row: PredictionRow) -> Prediction:
+        return Prediction(
+            row.attempt_id, row.model_version, row.predicted, row.outcome, row.created_at
+        )
+
+    def add_prediction(
+        self,
+        *,
+        attempt_id: int,
+        task_id: int,
+        model_version: str,
+        predicted: float,
+        created_at: dt.datetime,
+    ) -> Prediction:
+        with self._session.begin() as s:
+            row = PredictionRow(
+                attempt_id=attempt_id,
+                task_id=task_id,
+                model_version=model_version,
+                predicted=predicted,
+                created_at=created_at,
+            )
+            s.add(row)
+            s.flush()
+            return self._prediction(row)
+
+    def resolve_prediction(self, attempt_id: int, outcome: int, at: dt.datetime) -> None:
+        with self._session.begin() as s:
+            s.execute(
+                update(PredictionRow)
+                .where(PredictionRow.attempt_id == attempt_id, PredictionRow.outcome.is_(None))
+                .values(outcome=outcome, resolved_at=at)
+            )
+
+    def list_predictions(self, limit: int = 1000) -> list[Prediction]:
+        query = select(PredictionRow).order_by(PredictionRow.id.desc()).limit(limit)
+        with self._session() as s:
+            return [self._prediction(r) for r in s.scalars(query)]
+
+    @staticmethod
+    def _mistake(row: MistakeRow) -> Mistake:
+        return Mistake(
+            id=row.id,
+            attempt_id=row.attempt_id,
+            task_id=row.task_id,
+            skill_code=row.skill_code,
+            category=row.category,
+            classified_by=row.classified_by,
+            confidence=row.confidence,
+            description=row.description,
+            created_at=row.created_at,
+            is_current=row.is_current,
+        )
+
+    def add_mistakes(
+        self,
+        *,
+        attempt_id: int,
+        task_id: int,
+        skill_codes: Sequence[str | None],
+        draft: MistakeDraft,
+        created_at: dt.datetime,
+    ) -> list[Mistake]:
+        with self._session.begin() as s:
+            rows = [
+                MistakeRow(
+                    attempt_id=attempt_id,
+                    task_id=task_id,
+                    skill_code=code,
+                    category=draft.category,
+                    classified_by=draft.classified_by,
+                    confidence=draft.confidence,
+                    description=draft.description,
+                    created_at=created_at,
+                    is_current=True,
+                )
+                for code in skill_codes
+            ]
+            s.add_all(rows)
+            s.flush()
+            return [self._mistake(r) for r in rows]
+
+    def get_mistake(self, mistake_id: int) -> Mistake | None:
+        with self._session() as s:
+            row = s.get(MistakeRow, mistake_id)
+            return self._mistake(row) if row else None
+
+    def reclassify_mistake(
+        self, mistake_id: int, category: MistakeCategory, description: str, at: dt.datetime
+    ) -> Mistake:
+        """Уточнение пользователя: старая запись остаётся в истории, новая становится текущей."""
+        with self._session.begin() as s:
+            old = s.get(MistakeRow, mistake_id)
+            if old is None:
+                raise RepositoryError(f"ошибка №{mistake_id} не найдена")
+            if not old.is_current:
+                raise RepositoryError(f"ошибка №{mistake_id} уже уточнена")
+            old.is_current = False
+            row = MistakeRow(
+                attempt_id=old.attempt_id,
+                task_id=old.task_id,
+                skill_code=old.skill_code,
+                category=category,
+                classified_by=ClassifiedBy.USER,
+                confidence=1.0,
+                description=description,
+                created_at=at,
+                is_current=True,
+                replaces_id=old.id,
+            )
+            s.add(row)
+            s.flush()
+            return self._mistake(row)
+
+    def list_mistakes(
+        self,
+        *,
+        skill_code: str | None = None,
+        attempt_id: int | None = None,
+        current_only: bool = True,
+        limit: int = 200,
+    ) -> list[Mistake]:
+        query = select(MistakeRow).order_by(MistakeRow.created_at.desc(), MistakeRow.id.desc())
+        if skill_code is not None:
+            query = query.where(MistakeRow.skill_code == skill_code)
+        if attempt_id is not None:
+            query = query.where(MistakeRow.attempt_id == attempt_id)
+        if current_only:
+            query = query.where(MistakeRow.is_current.is_(True))
+        with self._session() as s:
+            return [self._mistake(r) for r in s.scalars(query.limit(limit))]
+
+    def save_patterns(self, skill_code: str, patterns: Sequence[MistakePattern]) -> None:
+        """Заменить паттерны навыка пересчитанными (это производные данные)."""
+        with self._session.begin() as s:
+            s.execute(delete(MistakePatternRow).where(MistakePatternRow.skill_code == skill_code))
+            s.add_all(
+                MistakePatternRow(
+                    skill_code=p.skill_code,
+                    category=p.category,
+                    occurrences=p.occurrences,
+                    first_at=p.first_at,
+                    last_at=p.last_at,
+                    independent_streak=p.independent_streak,
+                    closed_at=p.closed_at,
+                    priority=p.priority,
+                )
+                for p in patterns
+            )
+
+    def list_patterns(self, open_only: bool = True) -> list[MistakePattern]:
+        query = select(MistakePatternRow).order_by(
+            MistakePatternRow.priority.desc(), MistakePatternRow.skill_code
+        )
+        if open_only:
+            query = query.where(MistakePatternRow.closed_at.is_(None))
+        with self._session() as s:
+            return [
+                MistakePattern(
+                    r.skill_code,
+                    r.category,
+                    r.occurrences,
+                    r.first_at,
+                    r.last_at,
+                    r.independent_streak,
+                    r.closed_at,
+                    r.priority,
+                )
+                for r in s.scalars(query)
+            ]

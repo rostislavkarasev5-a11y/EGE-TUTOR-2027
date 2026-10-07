@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "macros.html" import bar with context %}
+{% block content %}
+<h1>Прогресс</h1>
+<p class="meta">Mastery v0 — стартовая экспериментальная модель: оценки уточнятся, когда накопится история.
+  Освоение падает со временем, если тему не повторять.</p>
+<div class="row actions">
+  {% for s in Subject %}
+  <a class="tab {% if s == subject %}active{% endif %}" href="/progress?subject={{ s.value }}">{{ SUBJECT_NAMES[s] }}</a>
+  {% endfor %}
+</div>
+
+<section class="card">
+  <h2>По номерам заданий</h2>
+  {% if not any_studied %}<p>Пока нет решённых задач с навыками по этому предмету.</p>{% endif %}
+  <table>
+    <tr><th>№</th><th>Задание</th><th>Освоение</th><th>Изучено навыков</th></tr>
+    {% for a in items %}
+    <tr>
+      <td>{{ a.key }}</td>
+      <td>{{ a.title }}</td>
+      <td>{{ bar(a.value) }}</td>
+      <td>{{ a.studied }} из {{ a.total }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+{% if skills %}
+<section class="card">
+  <h2>Навыки</h2>
+  <div class="scroll">
+  <table>
+    <tr><th>Навык</th><th>Освоение</th><th>Уверенность</th><th>Попыток</th><th>Повторить</th></tr>
+    {% for m in skills %}
+    <tr>
+      <td>{{ m.skill_code }} {{ skill_title(m.skill_code) }}</td>
+      <td>{{ bar(m.value) }}</td>
+      <td>{{ (m.confidence * 100)|round|int }}%</td>
+      <td>{{ m.attempts }}</td>
+      <td>{% if m.review_due %}<strong>сейчас</strong>{% else %}{{ m.next_review_on.strftime("%d.%m") }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{% if calibration.count %}
+<p class="meta">Калибровка по {{ calibration.count }} попыткам: модель в среднем предсказывала
+  {{ (calibration.mean_predicted * 100)|round|int }}%, решено самостоятельно
+  {{ (calibration.mean_actual * 100)|round|int }}% (Brier {{ calibration.brier }}).</p>
+{% endif %}
+{% endblock %}

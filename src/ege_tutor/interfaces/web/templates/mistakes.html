@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field, reclassify_form with context %}
+{% block content %}
+<h1>Ошибки</h1>
+<p class="meta">Причину ошибки сначала угадывает простое правило. Если оно ошиблось — выбери верную причину:
+  исходная запись останется в истории.</p>
+
+<section class="card">
+  <h2>Частые ошибки</h2>
+  {% if patterns %}
+  <table>
+    <tr><th>Навык</th><th>Что не так</th><th>Раз</th><th>Приоритет</th></tr>
+    {% for p in patterns %}
+    <tr>
+      <td>{{ p.skill_code }} {{ skill_title(p.skill_code) }}</td>
+      <td>{{ p.category_name }}</td>
+      <td>{{ p.occurrences }}</td>
+      <td>{{ '%.2f'|format(p.priority) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="meta">Ошибка перестаёт быть частой после трёх самостоятельных верных решений в разные дни.</p>
+  {% else %}
+  <p>Частых ошибок нет.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Последние ошибки</h2>
+  {% if not mistakes %}<p>Ошибок пока нет.</p>{% else %}
+  <div class="scroll">
+  <table>
+    <tr><th>Когда</th><th>Попытка</th><th>Навык</th><th>Что не так</th><th></th></tr>
+    {% for m in mistakes %}
+    <tr>
+      <td>{{ m.created_at|utc_time }}</td>
+      <td><a href="/attempts/{{ m.attempt_id }}">{{ m.attempt_id }}</a></td>
+      <td>{{ m.skill_code or "—" }}</td>
+      <td>{{ m.category_name }}{% if m.classified_by.value == "USER" %} (ты уточнил){% endif %}
+        <div class="meta">{{ m.description }}</div></td>
+      <td>{% if m.classified_by.value != "USER" %}{{ reclassify_form(m) }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

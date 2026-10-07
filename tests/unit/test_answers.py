@@ -1,7 +1,7 @@
 """Проверка кратких ответов (subjects/): формат бланка ЕГЭ, информатика, SymPy."""
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from hypothesis import strategies as st
 
 from ege_tutor.core.domain import AnswerType, Subject, Verdict
@@ -84,6 +84,7 @@ def test_any_exam_style_number_equal_to_answer_is_correct(value):
 
 
 @given(st.text(max_size=40))
+@example(")")  # SymPy падал с IndexError на одной скобке
 def test_checker_never_crashes(text):
     for tutor in (math, inf):
         for answer_type, expected in (

@@ -38,3 +38,23 @@
   <option value="informatics" {% if selected in ("informatics", "INFORMATICS") %}selected{% endif %}>Информатика</option>
 </select>
 {%- endmacro %}
+
+
+{% macro bar(value) -%}
+{% if value is none %}<span class="meta">не изучено</span>{% else %}
+<progress class="bar" max="100" value="{{ (value * 100)|round|int }}"></progress>
+{{ (value * 100)|round|int }}%{% endif %}
+{%- endmacro %}
+
+{% macro reclassify_form(m) -%}
+<form method="post" action="/mistakes/{{ m.id }}" class="row compact">
+  {{ csrf_field() }}
+  <input type="hidden" name="back" value="{{ request.url.path }}">
+  <select name="category" aria-label="Причина ошибки">
+    {% for c in MistakeCategory %}
+    <option value="{{ c.value }}" {% if c == m.category %}selected{% endif %}>{{ MISTAKE_CATEGORY_NAMES[c] }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="secondary">Уточнить</button>
+</form>
+{%- endmacro %}

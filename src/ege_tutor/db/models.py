@@ -6,6 +6,7 @@ from enum import StrEnum
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -26,8 +27,10 @@ from ege_tutor.core.domain import (
     AnswerType,
     AttemptMode,
     AttemptStatus,
+    ClassifiedBy,
     CodeVerdict,
     ImportBatchStatus,
+    MistakeCategory,
     Subject,
     TaskSource,
     Verdict,
@@ -350,3 +353,97 @@ class CodeRunRow(Base):
     stderr: Mapped[str] = mapped_column(Text)
     exit_code: Mapped[int | None] = mapped_column(Integer)
     duration_seconds: Mapped[float] = mapped_column(Float)
+
+
+# ── mastery, ошибки, повторения (Phase 4, ADR-0015) ──────────────────────────
+
+
+class MasteryRow(Base):
+    """Текущее состояние навыка. Производные данные: всегда можно пересчитать по попыткам."""
+
+    __tablename__ = "mastery"
+    __table_args__ = (
+        CheckConstraint("value_raw BETWEEN 0 AND 1", name="value_raw_range"),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="confidence_range"),
+    )
+
+    skill_code: Mapped[str] = mapped_column(ForeignKey("skill.code"), primary_key=True)
+    model_version: Mapped[str] = mapped_column(String(32))
+    value_raw: Mapped[float] = mapped_column(Float)
+    confidence: Mapped[float] = mapped_column(Float)
+    stability_days: Mapped[float] = mapped_column(Float)
+    attempts: Mapped[int]
+    last_practiced_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    next_review_on: Mapped[dt.date] = mapped_column(Date)
+    updated_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class MasterySnapshotRow(Base):
+    """Снимок навыка за день. Прошлые дни не переписываются (ADR-0015)."""
+
+    __tablename__ = "mastery_snapshot"
+    __table_args__ = (CheckConstraint("value BETWEEN 0 AND 1", name="value_range"),)
+
+    snapshot_date: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    skill_code: Mapped[str] = mapped_column(ForeignKey("skill.code"), primary_key=True)
+    model_version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    value: Mapped[float] = mapped_column(Float)
+    value_raw: Mapped[float] = mapped_column(Float)
+    confidence: Mapped[float] = mapped_column(Float)
+
+
+class PredictionRow(Base):
+    """Предсказание модели перед попыткой и факт после неё (для калибровки)."""
+
+    __tablename__ = "prediction_log"
+    __table_args__ = (
+        UniqueConstraint("attempt_id"),
+        CheckConstraint("predicted BETWEEN 0 AND 1", name="predicted_range"),
+        CheckConstraint("outcome IS NULL OR outcome IN (0, 1)", name="outcome_binary"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"))
+    task_id: Mapped[int] = mapped_column(ForeignKey("task.id"))
+    model_version: Mapped[str] = mapped_column(String(32))
+    predicted: Mapped[float] = mapped_column(Float)
+    outcome: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    resolved_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)
+
+
+class MistakeRow(Base):
+    """Ошибка в попытке. Не удаляется: уточнение пользователя — новая строка."""
+
+    __tablename__ = "mistake"
+    __table_args__ = (
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="confidence_range"),
+        Index("ix_mistake_skill", "skill_code"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"))
+    task_id: Mapped[int] = mapped_column(ForeignKey("task.id"))
+    skill_code: Mapped[str | None] = mapped_column(ForeignKey("skill.code"))
+    category: Mapped[MistakeCategory] = mapped_column(_enum(MistakeCategory))
+    classified_by: Mapped[ClassifiedBy] = mapped_column(_enum(ClassifiedBy))
+    confidence: Mapped[float] = mapped_column(Float)
+    description: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    replaces_id: Mapped[int | None] = mapped_column(ForeignKey("mistake.id"))
+
+
+class MistakePatternRow(Base):
+    """Паттерн ошибки: навык + категория. Производные данные, пересчитываются по истории."""
+
+    __tablename__ = "mistake_pattern"
+
+    skill_code: Mapped[str] = mapped_column(ForeignKey("skill.code"), primary_key=True)
+    category: Mapped[MistakeCategory] = mapped_column(_enum(MistakeCategory), primary_key=True)
+    occurrences: Mapped[int]
+    first_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    last_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    independent_streak: Mapped[int]
+    closed_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)
+    priority: Mapped[float] = mapped_column(Float)

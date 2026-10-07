@@ -20,6 +20,20 @@
 </section>
 
 <section class="card">
+  <h2>Повторение</h2>
+  {% if queue %}
+  <p>В очереди повторений: {{ queue|length }}. Первым — {{ queue[0].skill_title }}
+    ({{ REVIEW_REASON_NAMES[queue[0].reason] }}).</p>
+  <form method="post" action="/repeat">
+    {{ csrf_field() }}
+    <button type="submit">Повторить</button>
+  </form>
+  {% else %}
+  <p>Повторять пока нечего. Сюда попадут темы, которые пора освежить, и частые ошибки.</p>
+  {% endif %}
+</section>
+
+<section class="card">
   <h2>Экзамены</h2>
   <table>
     <tr><th>Предмет</th><th>Дата</th><th>Осталось дней</th><th>Цель</th></tr>
@@ -38,7 +52,7 @@
   <h2>Состояние</h2>
   <ul class="plain">
     <li>Задач в базе: {{ info.task_count }}</li>
-    <li>Python Sandbox (Phase 3): {{ "готов" if info.sandbox_available else "ещё нет" }}</li>
+    <li>Песочница для программ: {{ "готова" if info.sandbox_available else "не настроена" }}</li>
     <li>ИИ (Phase 6): {{ "подключён" if info.ai_available else "не подключён" }}</li>
   </ul>
   <form method="post" action="/backup">

@@ -114,3 +114,12 @@ details.run summary { cursor: pointer; }
 .run-wrong_answer, .run-time_limit, .run-memory_limit, .run-runtime_error, .run-syntax_error {
   color: var(--bad); font-weight: 600;
 }
+
+/* прогресс и ошибки (Phase 4) */
+/* полоска без inline-стилей: их запрещает CSP */
+progress.bar { width: 120px; max-width: 40vw; height: 10px; margin-right: 6px; vertical-align: middle;
+  accent-color: var(--accent); }
+a.tab { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; text-decoration: none; }
+a.tab.active { border-color: var(--accent); font-weight: 600; }
+.mistake-note { margin: 12px 0; padding: 10px; border-left: 3px solid var(--warn); }
+form.compact select { max-width: 60vw; }

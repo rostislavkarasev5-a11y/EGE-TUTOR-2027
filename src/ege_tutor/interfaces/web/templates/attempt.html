@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import statement, answer_block, csrf_field with context %}
+{% from "macros.html" import statement, answer_block, csrf_field, reclassify_form with context %}
 {% macro code_block() %}
 <div id="code" class="code-box">
   <h3>Программа на Python</h3>
@@ -33,6 +33,17 @@
   </details>
   {% endfor %}
 </div>
+{% endmacro %}
+{% macro mistake_note() %}
+{% if mistakes %}
+<div class="mistake-note">
+  <p>Ошибка записана: <strong>{{ mistakes[0].category_name }}</strong> — {{ mistakes[0].description }}.</p>
+  {% if mistakes[0].classified_by.value != "USER" %}
+  <p class="meta">Если причина другая, выбери её:</p>
+  {{ reclassify_form(mistakes[0]) }}
+  {% endif %}
+</div>
+{% endif %}
 {% endmacro %}
 {% block content %}
 {{ statement(task) }}
@@ -79,8 +90,10 @@
     <p class="result verdict-{{ attempt.verdict|lower }}">Итог: {{ VERDICT_NAMES[attempt.verdict] }}
       <span class="meta">(твой ответ: {{ attempt.answer }})</span></p>
     {% if explanation %}<p>{{ explanation }}</p>{% endif %}
+    {{ mistake_note() }}
     {% elif attempt.status == AttemptStatus.GAVE_UP %}
     <p class="result">Ты сдался на этой задаче.</p>
+    {{ mistake_note() }}
     {% else %}
     <p class="result">Попытка брошена.</p>
     {% endif %}
