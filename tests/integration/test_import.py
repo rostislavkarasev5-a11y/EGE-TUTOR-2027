@@ -194,7 +194,7 @@ def test_assets_are_copied_by_hash(tutor, write_file):
 
 def test_assets_outside_task_folder_are_rejected(tutor, write_file, tmp_path):
     # Файл задач (например, загруженный на сайт) не должен дотягиваться до чужих файлов.
-    (tmp_path / "secret.txt").write_text("личное")
+    (tmp_path / "secret.txt").write_text("личное", encoding="utf-8")
     text = _one_task(subject="informatics", exam_item=17, skills="[I17.sequences]")
     text = text.replace("    answer:", "    assets: [../secret.txt]\n    answer:")
     report = tutor.preview_import(write_file("t.yaml", text))
