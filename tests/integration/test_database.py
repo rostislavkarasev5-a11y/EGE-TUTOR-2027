@@ -98,3 +98,23 @@ def test_profile_defaults_and_validation(tutor):
     with pytest.raises(AppError):
         tutor.update_profile(display_name="x" * 101)
     assert tutor.update_profile(display_name="  ").display_name is None
+
+
+def test_phase1_database_upgrades_and_keeps_data(tmp_path, fixed_clock):
+    """update.bat на компьютере пользователя: база Phase 1 обновляется, данные остаются."""
+    from alembic import command
+
+    from ege_tutor.db.engine import alembic_config
+
+    engine = make_engine(tmp_path / "old.db")
+    command.upgrade(alembic_config(engine), "0001")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO subject (code) VALUES ('MATH_PROFILE'), ('INFORMATICS')"))
+        conn.execute(text("INSERT INTO student (id, display_name) VALUES (1, 'Ученик')"))
+    upgrade_to_head(engine)
+    repo = SqlRepository(engine)
+    repo.sync_catalog(load_catalog(load_settings().content_dir))
+    assert repo.get_profile().display_name == "Ученик"
+    spec = repo.get_exam_spec(Subject.MATH_PROFILE)
+    assert spec.item(6).time_norm_seconds == 4 * 60
+    engine.dispose()

@@ -123,3 +123,70 @@ def test_task_panel_fits_old_windows_console():
     assert _box_chars(result.output)
     for ch in _box_chars(result.output):
         ch.encode("cp866")
+
+
+# ── Phase 2: решение задач ──────────────────────────────────────────────────
+
+
+def _import_and_review_all():
+    invoke("import", SAMPLE, "--apply")
+    result = runner.invoke(app, ["review"], input="да\n" * 5)
+    assert result.exit_code == 0, result.output
+    assert "Непроверенных задач нет" in result.output
+
+
+def test_solve_requires_review_first():
+    invoke("import", SAMPLE, "--apply")
+    result = invoke("solve")
+    assert result.exit_code == 1
+    assert "review" in result.output
+
+
+def test_solve_correct_answer_then_stop():
+    _import_and_review_all()
+    result = runner.invoke(app, ["solve", "1"], input="6\nнет\n")
+    assert result.exit_code == 0, result.output
+    assert "верно" in result.output
+    assert "Решено самостоятельно" in result.output
+    assert "не задание ФИПИ" in result.output  # метка источника видна при решении
+
+
+def test_solve_hint_wrong_retry_and_history():
+    _import_and_review_all()
+    result = runner.invoke(app, ["solve", "2"], input="?\n2/5\nда\n0,4\nнет\n")
+    assert result.exit_code == 0, result.output
+    assert "Уровень 1" in result.output
+    assert "неверный формат" in result.output
+    assert "Подсказки из прошлой попытки учтены" in result.output
+    history = invoke("attempts")
+    assert "2/5" in history.output
+    assert "0,4" in history.output
+
+
+def test_solve_give_up_shows_answer_with_comma():
+    _import_and_review_all()
+    result = runner.invoke(app, ["solve", "2"], input="сдаюсь\nнет\n")
+    assert result.exit_code == 0, result.output
+    assert "Правильный ответ: 0,4" in result.output
+    assert "сдался" in invoke("attempts").output
+
+
+def test_solve_exit_keeps_abandoned_attempt():
+    _import_and_review_all()
+    result = runner.invoke(app, ["solve", "1"], input="выход\n")
+    assert result.exit_code == 0, result.output
+    assert "брошена" in invoke("attempts").output
+
+
+def test_solve_interrupted_input_is_saved_as_abandoned():
+    _import_and_review_all()
+    result = runner.invoke(app, ["solve", "1"], input="")
+    assert "прервана" in result.output
+    assert "брошена" in invoke("attempts").output
+
+
+def test_review_no_marks_task_disputed():
+    invoke("import", SAMPLE, "--apply")
+    result = runner.invoke(app, ["review", "1"], input="нет\n")
+    assert result.exit_code == 0, result.output
+    assert "спорная" in invoke("tasks").output

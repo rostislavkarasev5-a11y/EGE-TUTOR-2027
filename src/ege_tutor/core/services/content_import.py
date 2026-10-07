@@ -17,6 +17,7 @@ from typing import Any
 import yaml
 
 from ege_tutor.core.domain import (
+    HINT_LEVELS,
     AnswerKind,
     AnswerType,
     ExamSpec,
@@ -24,6 +25,7 @@ from ege_tutor.core.domain import (
     ImportReport,
     Subject,
     TaskDraft,
+    TaskHint,
     TaskSource,
     VerificationStatus,
 )
@@ -43,6 +45,7 @@ KNOWN_FIELDS = {
     "verification_status",
     "skills",
     "assets",
+    "hints",
 }
 # При импорте можно указать только эти статусы. AUTO_CHECKED ставит сама система
 # после автоматической проверки, DISPUTED/REJECTED — при разборе ошибок в задачах.
@@ -171,6 +174,41 @@ def _normalize_answer(answer_type: AnswerType, value: Any, check: _RowChecker) -
             return None
         return " ".join(parts)
     return text
+
+
+def _parse_hints(value: Any, answer: str | None, check: _RowChecker) -> tuple[TaskHint, ...]:
+    """Подсказки уровней 1–3: список по порядку или словарь {уровень: текст}.
+
+    Уровень 4 — это solution задачи, уровень 5 — похожая задача: их здесь не задают.
+    """
+    if value is None or value == "":
+        return ()
+    if isinstance(value, str):
+        items = [(1, value)]
+    elif isinstance(value, list):
+        items = list(enumerate(value, start=1))
+    elif isinstance(value, dict):
+        items = list(value.items())
+    else:
+        check.error("hints: нужен список подсказок или словарь {уровень: текст}")
+        return ()
+    hints = []
+    for raw_level, raw_text in items:
+        try:
+            level = int(raw_level)
+        except (TypeError, ValueError):
+            level = 0
+        text = str(raw_text or "").strip()
+        if level not in HINT_LEVELS:
+            check.error("hints: уровни подсказок — 1, 2 и 3 (4 — это solution)")
+            return ()
+        if not text:
+            check.error(f"hints: пустая подсказка уровня {level}")
+            return ()
+        if answer and re.search(rf"(?<![\w.,]){re.escape(answer)}(?![\w.,])", text):
+            check.warn(f"hints: подсказка уровня {level} похоже содержит ответ")
+        hints.append(TaskHint(level, text))
+    return tuple(sorted(hints, key=lambda h: h.level))
 
 
 def _validate_record(
@@ -302,6 +340,8 @@ def _validate_record(
         else:
             asset_paths.append(str(path))
 
+    hints = _parse_hints(record.get("hints"), answer, check)
+
     if not check.ok or subject is None or exam_item is None:
         return None
     if source is None or status is None or answer_type is None:
@@ -322,6 +362,7 @@ def _validate_record(
         skills=tuple(dict.fromkeys(skills)),
         asset_paths=tuple(asset_paths),
         content_hash=content_hash(subject, exam_item, statement),
+        hints=hints,
     )
 
 

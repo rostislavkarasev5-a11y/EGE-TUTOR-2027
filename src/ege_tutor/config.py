@@ -131,6 +131,10 @@ class ForgettingConfig(_Strict):
     review_threshold: Factor
 
 
+class AttemptsConfig(_Strict):
+    hint_carryover_hours: PositiveWeight
+
+
 class MasteryConfig(_Strict):
     """Коэффициенты Mastery v0 (ADR-0006).
 
@@ -145,6 +149,7 @@ class MasteryConfig(_Strict):
     difficulty_weight: DifficultyWeights
     mode_weight: ModeWeights
     forgetting: ForgettingConfig
+    attempts: AttemptsConfig
 
 
 # ── diagnostics.toml ────────────────────────────────────────────────────────
