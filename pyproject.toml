@@ -7,13 +7,16 @@ requires-python = ">=3.13"
 # Зависимости добавляются в той фазе, где они реально используются (ADR-0003):
 # SQLAlchemy + Alembic — Phase 1, SymPy — Phase 2, anthropic — Phase 6, FastAPI — Phase 12.
 dependencies = [
+    "alembic>=1.20,<2",
     "pydantic>=2.13,<3",
+    "pyyaml>=6.0.2,<7",
     "rich>=15,<16",
+    "sqlalchemy>=2.1,<2.2",
     "typer>=0.27,<0.28",
 ]
 
 [project.scripts]
-ege = "ege_tutor.interfaces.cli.main:app"
+ege = "ege_tutor.interfaces.cli.main:run"
 
 [dependency-groups]
 dev = [

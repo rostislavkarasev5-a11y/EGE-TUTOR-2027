@@ -4,8 +4,8 @@
 
 | № | Фаза | Что будет готово | Действия пользователя | Статус |
 |---|---|---|---|---|
-| **0** | Фундамент | Структура проекта, uv, Ruff, pytest, Hypothesis, CI (Linux + Windows), защита от публикации секретов, конфигурация (`app`, `mastery`, `diagnostics`), порты `Repository` / `AIService` / `Sandbox` / `Clock`, фасад `TutorApp`, CLI `ege --version` и `ege info`, документация и ADR. | Нажать «Merge» по инструкции. | в работе |
-| **1** | Данные, каталог и импорт контента | SQLite + SQLAlchemy 2 + Alembic, профиль, даты экзаменов TBD, структура экзаменов (provisional), темы и навыки, модель задачи с обязательными `source` / `source_ref` / `verification_status` и `source_version`, конвейер импорта с отчётом и откатом, шаблоны импорта, `install.bat` / `update.bat`. | Установить Git и uv, запустить `install.bat`. Начать собирать материалы. | — |
+| **0** | Фундамент | Структура проекта, uv, Ruff, pytest, Hypothesis, CI (Linux + Windows), защита от публикации секретов, конфигурация (`app`, `mastery`, `diagnostics`), порты `Repository` / `AIService` / `Sandbox` / `Clock`, фасад `TutorApp`, CLI `ege --version` и `ege info`, документация и ADR. | Нажать «Merge» по инструкции. | готово |
+| **1** | Данные, каталог и импорт контента | SQLite + SQLAlchemy 2 + Alembic, профиль, даты экзаменов TBD, структура экзаменов (provisional), темы и навыки, модель задачи с обязательными `source` / `source_ref` / `verification_status` и `source_version`, конвейер импорта с отчётом и откатом, шаблоны импорта, `install.bat` / `update.bat`, команды `ege profile/exam/topics/import/imports/undo-import/tasks/task`. | Установить Git и uv, запустить `install.bat`. Начать собирать материалы. | в работе |
 | **2** | Решение задач | Проверка кратких ответов (SymPy — вспомогательно), таймер, 5 уровней подсказок, попытки, самостоятельность. | Порешать тестовые задачи, дать обратную связь. | — |
 | **3** | Python Sandbox | Docker Desktop (основной), WSL2 / Linux-native (запасной), лимиты, тест-кейсы, вердикты, тесты на «злые» программы. | Установить Docker Desktop. | — |
 | **4** | Mastery v0, ошибки, повторения | `MasteryModel` v0 по `config/mastery.toml`, `prediction_log`, пересчёт по истории, классификация ошибок правилами, паттерны, очередь повторений, снимки истории. | — | — |
@@ -23,7 +23,7 @@
 | Зависимость | Фаза |
 |---|---|
 | Pydantic, Typer, Rich, pytest, Hypothesis, Ruff | 0 |
-| SQLAlchemy 2, Alembic | 1 |
+| SQLAlchemy 2, Alembic, PyYAML (ADR-0010) | 1 |
 | SymPy | 2 |
 | anthropic SDK | 6 |
 | FastAPI | 12 |

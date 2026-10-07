@@ -1,0 +1,61 @@
+# Примеры задач для проверки импорта и команд `ege tasks` / `ege task`.
+# Все задачи придуманы Claude (ИИ) для этого репозитория: это НЕ задания ФИПИ
+# и не задачи из сборников, поэтому они помечены AI_GENERATED и не проверены (UNVERIFIED).
+#
+#   ege import content/sample/tasks.yaml --apply
+
+defaults:
+  source: AI_GENERATED
+  source_ref: "EGE-TUTOR-2027: пример для проверки импорта"
+  verification_status: UNVERIFIED
+
+tasks:
+  - subject: math
+    exam_item: 6
+    statement: "Решите уравнение 3x − 7 = 11."
+    answer: 6
+    solution: "3x = 18, x = 6."
+    difficulty: 1
+    time_norm_minutes: 2
+    skills: [M06.algebraic]
+
+  - subject: math
+    exam_item: 4
+    statement: >-
+      В урне 4 белых и 6 чёрных шаров. Наугад достают один шар.
+      Найдите вероятность того, что он белый.
+    answer: "0,4"
+    solution: "Благоприятных исходов 4, всего 10: 4/10 = 0,4."
+    difficulty: 1
+    time_norm_minutes: 2
+    skills: [M04.classical]
+
+  - subject: math
+    exam_item: 7
+    statement: "Найдите значение выражения log₂32 − log₃9."
+    answer: 3
+    solution: "log₂32 = 5, log₃9 = 2, 5 − 2 = 3."
+    difficulty: 2
+    time_norm_minutes: 3
+    skills: [M07.logarithms]
+
+  - subject: informatics
+    exam_item: 14
+    statement: "Сколько единиц содержится в двоичной записи числа 255?"
+    answer: 8
+    solution: "255 = 2⁸ − 1 = 11111111₂, восемь единиц."
+    difficulty: 1
+    time_norm_minutes: 2
+    skills: [I14.bases]
+
+  - subject: informatics
+    exam_item: 17
+    statement: >-
+      В файле numbers.txt записаны целые числа, по одному в строке.
+      Найдите количество пар соседних элементов, в которых ровно одно число отрицательное.
+    answer: 3
+    solution: "Подходят пары (12, −5), (−5, 40) и (7, −1); в паре (40, 7) отрицательных нет."
+    difficulty: 2
+    time_norm_minutes: 8
+    skills: [I17.sequences, I00.files]
+    assets: [files/numbers.txt]

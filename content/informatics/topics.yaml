@@ -1,0 +1,141 @@
+# Каталог тем и навыков: информатика (КЕГЭ).
+# Тема I00 — Python ровно в объёме, нужном для экзамена; её навыки привязаны к заданиям, где нужен код.
+subject: INFORMATICS
+topics:
+  - code: I00
+    title: "Python для КЕГЭ"
+    exam_items: []
+    skills:
+      - {code: I00.basics, title: "Переменные, ввод-вывод, арифметика", exam_items: [5, 6, 8, 12, 14, 15, 16, 23, 25]}
+      - {code: I00.loops_conditions, title: "Циклы и условия", exam_items: [5, 8, 12, 14, 15, 17, 25], requires: [I00.basics]}
+      - {code: I00.strings, title: "Строки и их методы", exam_items: [5, 12, 14, 24], requires: [I00.loops_conditions]}
+      - {code: I00.lists, title: "Списки и сортировка", exam_items: [17, 26, 27], requires: [I00.loops_conditions]}
+      - {code: I00.files, title: "Чтение данных из файла", exam_items: [17, 24, 26, 27], requires: [I00.lists]}
+      - {code: I00.functions_recursion, title: "Функции и рекурсия", exam_items: [16, 19, 20, 21, 23], requires: [I00.loops_conditions]}
+      - {code: I00.itertools, title: "Перебор с itertools", exam_items: [8], requires: [I00.loops_conditions]}
+  - code: I01
+    title: Анализ информационных моделей
+    exam_items: [1]
+    skills:
+      - {code: I01.graphs, title: "Графы и таблицы смежности"}
+  - code: I02
+    title: Таблицы истинности логических функций
+    exam_items: [2]
+    skills:
+      - {code: I02.truth_tables, title: "Построение и анализ таблиц истинности"}
+  - code: I03
+    title: Поиск и сортировка в базах данных
+    exam_items: [3]
+    skills:
+      - {code: I03.relational, title: "Связанные таблицы в электронной таблице"}
+  - code: I04
+    title: Кодирование и декодирование информации
+    exam_items: [4]
+    skills:
+      - {code: I04.prefix_codes, title: "Префиксные коды и условие Фано"}
+  - code: I05
+    title: Анализ и построение алгоритмов
+    exam_items: [5]
+    skills:
+      - {code: I05.number_algorithms, title: "Алгоритмы, преобразующие запись числа"}
+  - code: I06
+    title: Исполнитель Черепаха
+    exam_items: [6]
+    skills:
+      - {code: I06.turtle, title: "Анализ фигуры, построенной Черепахой"}
+  - code: I07
+    title: Кодирование графической и звуковой информации
+    exam_items: [7]
+    skills:
+      - {code: I07.media_volume, title: "Объём изображений и звуковых файлов"}
+  - code: I08
+    title: "Комбинаторика: перечисление слов"
+    exam_items: [8]
+    skills:
+      - {code: I08.counting, title: "Подсчёт слов и кодов по условию"}
+  - code: I09
+    title: Обработка числовой информации в электронных таблицах
+    exam_items: [9]
+    skills:
+      - {code: I09.spreadsheet_rows, title: "Анализ строк таблицы по условию"}
+  - code: I10
+    title: Поиск слов в текстовом документе
+    exam_items: [10]
+    skills:
+      - {code: I10.text_search, title: "Поиск и подсчёт слов в текстовом редакторе"}
+  - code: I11
+    title: Вычисление информационного объёма сообщения
+    exam_items: [11]
+    skills:
+      - {code: I11.info_volume, title: "Объём сообщений и паролей"}
+  - code: I12
+    title: Исполнитель Редактор
+    exam_items: [12]
+    skills:
+      - {code: I12.string_rewriting, title: "Алгоритмы замены подстрок"}
+  - code: I13
+    title: IP-адреса и маски сети
+    exam_items: [13]
+    skills:
+      - {code: I13.ip_masks, title: "Адрес сети, маска, количество адресов"}
+  - code: I14
+    title: Позиционные системы счисления
+    exam_items: [14]
+    skills:
+      - {code: I14.bases, title: "Перевод и арифметика в разных системах счисления"}
+  - code: I15
+    title: Преобразование логических выражений
+    exam_items: [15]
+    skills:
+      - {code: I15.logic_expressions, title: "Отрезки, делители и побитовые операции"}
+  - code: I16
+    title: Рекурсивные функции
+    exam_items: [16]
+    skills:
+      - {code: I16.recursion, title: "Вычисление значений рекурсивных функций"}
+  - code: I17
+    title: Обработка числовой последовательности
+    exam_items: [17]
+    skills:
+      - {code: I17.sequences, title: "Пары и тройки элементов последовательности из файла"}
+  - code: I18
+    title: Динамическое программирование в таблице (Робот)
+    exam_items: [18]
+    skills:
+      - {code: I18.grid_dp, title: "Максимальная и минимальная сумма на пути Робота"}
+  - code: I19
+    title: Теория игр
+    exam_items: [19, 20, 21]
+    skills:
+      - {code: I19.winning_strategy, title: "Выигрышные и проигрышные позиции"}
+      - {code: I19.game_analysis_code, title: "Анализ игры программой", requires: [I00.functions_recursion]}
+  - code: I22
+    title: Параллельные процессы
+    exam_items: [22]
+    skills:
+      - {code: I22.processes, title: "Время выполнения взаимозависимых процессов"}
+  - code: I23
+    title: Количество программ исполнителя
+    exam_items: [23]
+    skills:
+      - {code: I23.program_count, title: "Подсчёт программ: динамика и рекурсия"}
+  - code: I24
+    title: Обработка символьных строк
+    exam_items: [24]
+    skills:
+      - {code: I24.strings_file, title: "Поиск подстрок с условием в длинной строке"}
+  - code: I25
+    title: Обработка целочисленной информации
+    exam_items: [25]
+    skills:
+      - {code: I25.divisors_masks, title: "Делители и числа по маске"}
+  - code: I26
+    title: Обработка данных и сортировка
+    exam_items: [26]
+    skills:
+      - {code: I26.sorting_greedy, title: "Сортировка и жадные алгоритмы на данных из файла"}
+  - code: I27
+    title: Анализ данных (кластеризация)
+    exam_items: [27]
+    skills:
+      - {code: I27.clusters, title: "Кластеры точек и их центры"}

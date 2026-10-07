@@ -1,0 +1,56 @@
+# Шаблон файла с задачами для команды `ege import`.
+#
+# Как пользоваться:
+#   1. Скопируй этот файл в папку data/private_content/ (она не попадает в Git).
+#   2. Замени примеры своими задачами.
+#   3. Проверь файл:          ege import data/private_content/мои_задачи.yaml
+#   4. Если ошибок нет, добавь: ege import data/private_content/мои_задачи.yaml --apply
+#
+# Задачи из сборников и с сайта ФИПИ НЕЛЬЗЯ класть в репозиторий (он публичный):
+# только в data/private_content/.
+#
+# Поля задачи:
+#   subject              — math или informatics (обязательно)
+#   exam_item            — номер задания ЕГЭ (обязательно)
+#   statement            — условие (обязательно)
+#   answer               — ответ; для заданий с развёрнутым ответом можно не указывать
+#   answer_type          — NUMBER, TEXT, SEQUENCE или EXTENDED; по умолчанию NUMBER
+#                          для краткого ответа и EXTENDED для развёрнутого
+#   solution             — решение (необязательно)
+#   difficulty           — сложность 1–5 (необязательно)
+#   time_norm_minutes    — сколько минут разумно тратить (необязательно)
+#   source               — OFFICIAL_FIPI, OPEN_BANK, USER_MATERIAL или AI_GENERATED (обязательно)
+#   source_ref           — откуда задача: сборник и страница, ссылка, «демоверсия 2027, №5»
+#   source_version       — версия источника, например год сборника (необязательно)
+#   verification_status  — UNVERIFIED (по умолчанию) или REVIEWED, если ответ ты проверил сам.
+#                          Задачи AI_GENERATED всегда импортируются как UNVERIFIED.
+#   skills               — коды навыков из `ege topics --skills` (желательно)
+#   assets               — файлы к задаче (путь относительно этого файла), например для
+#                          информатики: [files/17.txt]
+#
+# defaults — общие поля для всех задач файла. Значение в самой задаче важнее.
+
+defaults:
+  subject: math
+  source: USER_MATERIAL
+  source_ref: "Мой конспект, урок 1"
+
+tasks:
+  - exam_item: 6
+    statement: "Решите уравнение 2x + 5 = 17."
+    answer: 6
+    difficulty: 1
+    skills: [M06.algebraic]
+
+  - exam_item: 13
+    statement: "а) Решите уравнение ... б) Найдите корни на отрезке ..."
+    solution: "Здесь можно записать решение."
+    time_norm_minutes: 15
+    skills: [M13.trig_equations, M13.root_selection]
+
+  - subject: informatics
+    exam_item: 14
+    statement: "Сколько единиц в двоичной записи числа 15?"
+    answer: 4
+    source_ref: "Мой конспект по информатике"
+    skills: [I14.bases]

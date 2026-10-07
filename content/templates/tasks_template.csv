@@ -1,0 +1,4 @@
+subject;exam_item;statement;answer;answer_type;difficulty;time_norm_minutes;source;source_ref;source_version;verification_status;skills;assets
+math;6;Решите уравнение 2x + 5 = 17.;6;;1;2;USER_MATERIAL;Мой конспект, урок 1;;;M06.algebraic;
+math;4;В коробке 3 красных и 7 синих шаров. Найдите вероятность вытащить красный.;0,3;;1;;USER_MATERIAL;Мой конспект, урок 2;;REVIEWED;M04.classical;
+informatics;14;Сколько единиц в двоичной записи числа 15?;4;;1;;USER_MATERIAL;Мой конспект по информатике;;;I14.bases;

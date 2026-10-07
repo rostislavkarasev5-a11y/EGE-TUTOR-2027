@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from ege_tutor.core.domain import Subject, VerificationStatus
 
 CONFIG_DIR_ENV = "EGE_TUTOR_CONFIG_DIR"
+DATA_DIR_ENV = "EGE_TUTOR_DATA_DIR"
 
 Factor = Annotated[float, Field(ge=0.0, le=1.0)]
 PositiveWeight = Annotated[float, Field(gt=0.0)]
@@ -175,16 +176,32 @@ class DiagnosticsConfig(_Strict):
 # ── загрузка ────────────────────────────────────────────────────────────────
 
 
+def project_root() -> Path:
+    """Корень репозитория (src/ege_tutor/config.py → ../..)."""
+    return Path(__file__).resolve().parents[2]
+
+
+def default_config_dir() -> Path:
+    return project_root() / "config"
+
+
 class Settings(_Strict):
     config_dir: Path
     app: AppConfig
     mastery: MasteryConfig
     diagnostics: DiagnosticsConfig
 
+    @property
+    def data_dir(self) -> Path:
+        """Папка личных данных: EGE_TUTOR_DATA_DIR → app.data_dir (относительно корня проекта)."""
+        env = os.environ.get(DATA_DIR_ENV)
+        path = Path(env) if env else self.app.app.data_dir
+        return path if path.is_absolute() else project_root() / path
 
-def default_config_dir() -> Path:
-    """Папка config/ в корне репозитория (src/ege_tutor/config.py → ../../config)."""
-    return Path(__file__).resolve().parents[2] / "config"
+    @property
+    def content_dir(self) -> Path:
+        """Публичный учебный контент из репозитория: каталог тем, структура экзаменов."""
+        return project_root() / "content"
 
 
 def _read_toml[M: BaseModel](path: Path, model: type[M]) -> M:

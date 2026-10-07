@@ -1,0 +1,144 @@
+# Структура экзамена: ЕГЭ по информатике (КЕГЭ, компьютерная форма).
+# status: provisional — по демоверсии ФИПИ 2026. Сверить с демоверсией 2027 после её публикации.
+# Таблица перевода первичных баллов в тестовые будет добавлена в Phase 9 из официального источника.
+subject: INFORMATICS
+exam_year: 2027
+status: provisional
+source: "Структура по демоверсии ФИПИ 2026; требует сверки с демоверсией 2027"
+duration_minutes: 235
+items:
+  - number: 1
+    title: "Анализ информационных моделей"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 2
+    title: "Таблицы истинности логических функций"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 3
+    title: "Поиск и сортировка в базах данных"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 4
+    title: "Кодирование и декодирование информации"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 5
+    title: "Анализ и построение алгоритмов"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 6
+    title: "Исполнитель Черепаха"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 7
+    title: "Кодирование графической и звуковой информации"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 8
+    title: "Комбинаторика: перечисление слов"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 9
+    title: "Обработка числовой информации в электронных таблицах"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 10
+    title: "Поиск слов в текстовом документе"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 11
+    title: "Вычисление информационного объёма сообщения"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 12
+    title: "Исполнитель Редактор"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 13
+    title: "IP-адреса и маски сети"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 14
+    title: "Позиционные системы счисления"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 15
+    title: "Преобразование логических выражений"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 16
+    title: "Рекурсивные функции"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 17
+    title: "Обработка числовой последовательности"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 18
+    title: "Динамическое программирование в таблице (Робот)"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 19
+    title: "Теория игр: выигрышная стратегия"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 20
+    title: "Теория игр: стратегия за два хода"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 21
+    title: "Теория игр: условия победы"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 22
+    title: "Параллельные процессы"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 23
+    title: "Количество программ исполнителя"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 24
+    title: "Обработка символьных строк"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 25
+    title: "Обработка целочисленной информации (делители, маски)"
+    part: 1
+    answer_kind: short
+    max_points: 1
+  - number: 26
+    title: "Обработка данных и сортировка"
+    part: 1
+    answer_kind: short
+    max_points: 2
+  - number: 27
+    title: "Анализ данных (кластеризация)"
+    part: 1
+    answer_kind: short
+    max_points: 2

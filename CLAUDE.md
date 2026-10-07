@@ -32,7 +32,7 @@ MATH / INFORMATICS tutors (src/ege_tutor/subjects/)
 
 ## Стек
 
-Python 3.13+, uv, SQLite, SQLAlchemy 2, Alembic, Pydantic v2, Typer, Rich, pytest, Hypothesis, Ruff, GitHub Actions, SymPy (вспомогательно). anthropic SDK — только с Phase 6. FastAPI/Web — только в будущих фазах. Зависимость добавляется в фазе, где используется (ADR-0003).
+Python 3.13+, uv, SQLite, SQLAlchemy 2, Alembic, PyYAML (ADR-0010), Pydantic v2, Typer, Rich, pytest, Hypothesis, Ruff, GitHub Actions, SymPy (вспомогательно). anthropic SDK — только с Phase 6. FastAPI/Web — только в будущих фазах. Зависимость добавляется в фазе, где используется (ADR-0003).
 
 ## Главные принципы
 
@@ -63,7 +63,7 @@ Python 3.13+, uv, SQLite, SQLAlchemy 2, Alembic, Pydantic v2, Typer, Rich, pytes
 Репозиторий публичный (ADR-0004).
 
 - Никогда не коммить: `.env`, ключи API и токены, базы данных (`*.db`, `*.sqlite*`), `data/`, `private_content/`, `private_assets/`, `config/local.toml`.
-- Никогда не коммить реальные персональные данные пользователя (включая расписание) и задачи из сборников/ФИПИ.
+- Никогда не коммить реальные персональные данные пользователя (включая расписание) и задачи из сборников/ФИПИ. Примеры задач в `content/sample/` пишет только Claude и помечает их `AI_GENERATED`.
 - Перед каждым коммитом: `uv run python scripts/check_secrets.py`. В тестах фальшивые секреты собирай во время выполнения.
 - Не используй реальные ключи; Claude API ключ не нужен до Phase 6.
 

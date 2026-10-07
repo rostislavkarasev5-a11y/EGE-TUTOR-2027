@@ -6,7 +6,7 @@
 
 ## Статус
 
-**Phase 0 — Foundation.** Готов фундамент: структура проекта, конфигурация, порты, фасад `TutorApp`, CLI, тесты, CI и защита от публикации секретов. Учебных функций пока нет — они появляются по фазам, см. [roadmap](docs/roadmap/ROADMAP.md).
+**Phase 1 — данные, каталог и импорт контента.** Есть локальная база SQLite, профиль с целями, структура обоих экзаменов (предварительная, по демоверсии 2026), каталог тем и навыков, импорт задач из YAML/CSV с проверкой, отчётом и отменой, установка двойным щелчком. Решать задачи в программе можно будет с Phase 2, см. [roadmap](docs/roadmap/ROADMAP.md).
 
 ## Документация
 
@@ -14,6 +14,31 @@
 - [Roadmap](docs/roadmap/ROADMAP.md)
 - [Архитектурные решения (ADR)](docs/decisions/README.md)
 - [Правила для Claude](CLAUDE.md)
+
+## Установка на Windows
+
+1. Установи [Git](https://git-scm.com/download/win) и [uv](https://docs.astral.sh/uv/getting-started/installation/).
+2. Скачай `install.bat` из репозитория и запусти двойным щелчком. Он скачает проект в
+   `%USERPROFILE%\EGE-TUTOR-2027`, установит Python и библиотеки, создаст базу и ярлык
+   `EGE-TUTOR.bat` на рабочем столе.
+3. Обновление — `update.bat` в папке проекта. Личные данные при обновлении не трогаются.
+
+## Команды
+
+```text
+ege info                       состояние программы
+ege profile [--name ...] [--target-math 90] [--target-informatics 90]
+ege exam math|informatics      структура экзамена
+ege topics [-s math] [--skills]
+ege import ФАЙЛ [--apply]      проверить файл с задачами / добавить задачи
+ege imports                    история импортов
+ege undo-import НОМЕР          отменить импорт
+ege tasks [-s math] [-n 6] [--source AI_GENERATED]
+ege task ID [--answer]
+```
+
+Шаблоны файлов с задачами — в [content/templates](content/templates/README.md). Примеры задач
+(созданы ИИ, помечены `AI_GENERATED`) — `content/sample/tasks.yaml`.
 
 ## Запуск (для разработки)
 
@@ -25,7 +50,7 @@ uv run ege --version    # версия
 uv run ege info         # состояние: фаза, даты экзаменов, компоненты
 ```
 
-Простая установка для Windows двойным щелчком (`install.bat`, `update.bat`) появится в Phase 1.
+Папку данных можно переопределить переменной `EGE_TUTOR_DATA_DIR` (так делают тесты).
 
 ## Проверки
 

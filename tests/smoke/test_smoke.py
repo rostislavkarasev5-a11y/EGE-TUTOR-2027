@@ -1,4 +1,4 @@
-"""Smoke-тесты Phase 0: проект импортируется, конфигурация грузится, приложение собирается."""
+"""Smoke-тесты: проект импортируется, конфигурация грузится, приложение собирается."""
 
 from typer.testing import CliRunner
 
@@ -20,13 +20,15 @@ def test_default_config_loads():
     assert settings.diagnostics.rules.hints_allowed is False
 
 
-def test_tutor_app_creates_with_defaults():
+def test_tutor_app_creates_with_defaults(data_dir):
     tutor = TutorApp.create()
     info = tutor.info()
-    assert info.phase == 0
+    assert info.phase == 1
     assert not info.ai_available
     assert not info.sandbox_available
-    assert not info.storage_ready
+    assert info.storage_ready
+    assert info.task_count == 0
+    assert (data_dir / "ege.db").is_file()
 
 
 def test_ports_exist():
