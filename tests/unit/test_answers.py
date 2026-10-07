@@ -85,6 +85,7 @@ def test_any_exam_style_number_equal_to_answer_is_correct(value):
 
 @given(st.text(max_size=40))
 @example(")")  # SymPy падал с IndexError на одной скобке
+@example("(")  # и с TokenError на незакрытой
 def test_checker_never_crashes(text):
     for tutor in (math, inf):
         for answer_type, expected in (

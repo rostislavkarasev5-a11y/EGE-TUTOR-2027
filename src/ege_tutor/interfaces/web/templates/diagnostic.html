@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "macros.html" import bar, csrf_field with context %}
+{% block content %}
+{% set session = state.session %}
+<h1>Диагностика: {{ SUBJECT_NAMES[session.subject] }}</h1>
+{% if session.status == DiagnosticStatus.ACTIVE %}
+<p>Решено задач: {{ state.tasks_done }} из не больше {{ state.max_tasks }} ·
+  время {{ state.minutes_spent|round|int }} из {{ state.max_minutes }} мин.</p>
+<div class="row actions">
+  <form method="post" action="/diagnostics/{{ session.id }}/continue">{{ csrf_field() }}<button type="submit">Продолжить</button></form>
+  <form method="post" action="/diagnostics/{{ session.id }}/finish">{{ csrf_field() }}<button class="link" type="submit">Завершить сейчас</button></form>
+</div>
+{% else %}
+<p class="flash success">Диагностика завершена{% if session.stop_reason %}: {{ STOP_REASON_NAMES[session.stop_reason] }}{% endif %}.
+  Решено задач: {{ state.tasks_done }}.</p>
+{% endif %}
+
+<section class="card">
+  <h2>Прогноз</h2>
+  <p><strong>{{ state.forecast.mean|round|int }} из {{ state.forecast.max_points }}</strong> первичных баллов,
+    вероятнее всего от {{ state.forecast.low|round|int }} до {{ state.forecast.high|round|int }}.</p>
+  <p class="meta">Это предварительный baseline: он уточнится по первым учебным блокам. Тестовые баллы появятся,
+    когда будет официальная таблица перевода на 2027 год. Задания части 2 оценены только по итоговому ответу,
+    без проверки оформления.</p>
+</section>
+
+<section class="card">
+  <h2>По номерам заданий</h2>
+  <div class="scroll">
+  <table>
+    <tr><th>№</th><th>Задание</th><th>Решу</th><th>Уверенность</th><th>Как получено</th></tr>
+    {% for e in state.estimates %}
+    <tr>
+      <td>{{ e.exam_item }}</td>
+      <td>{{ e.title }}</td>
+      <td>{{ bar(e.probability) }}</td>
+      <td>{{ (e.confidence * 100)|round|int }}%</td>
+      <td>{{ ITEM_BASIS_NAMES[e.basis] }}{% if e.basis == ItemBasis.DIRECT %} ({{ e.answered }} зад.{% if e.answer_only %}, по ответу{% endif %}){% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  <p class="meta">«Решу» — оценка вероятности решить задачу средней сложности этого номера.
+    «Выведено косвенно» — номер не измерялся, оценка идёт от общего уровня по предмету.</p>
+</section>
+{% endblock %}

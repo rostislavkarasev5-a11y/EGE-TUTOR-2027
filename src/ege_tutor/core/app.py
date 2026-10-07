@@ -18,6 +18,10 @@ from ege_tutor.core.domain import (
     AttemptMode,
     Catalog,
     CodeRun,
+    DiagnosticItemResult,
+    DiagnosticSession,
+    DiagnosticState,
+    DiagnosticStatus,
     ExamSpec,
     ImportBatch,
     ImportReport,
@@ -27,6 +31,7 @@ from ege_tutor.core.domain import (
     MistakePattern,
     ReviewItem,
     SkillMastery,
+    StopReason,
     StudentProfile,
     Subject,
     Task,
@@ -39,15 +44,18 @@ from ege_tutor.core.ports import AIService, Clock, Repository, RepositoryError, 
 from ege_tutor.core.services.catalog import load_catalog
 from ege_tutor.core.services.code import CodeService
 from ege_tutor.core.services.content_import import build_report
+from ege_tutor.core.services.diagnostics import DiagnosticsService
 from ege_tutor.core.services.mastery import Calibration, MasteryService
 from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
 from ege_tutor.sandbox import make_sandbox
 from ege_tutor.subjects import tutor_for
 
-CURRENT_PHASE = 4
+CURRENT_PHASE = 5
 DB_FILE_NAME = "ege.db"
 BACKUP_PREFIX = "ege-"
 DEFAULT_BACKUPS_KEPT = 14
+# Стартовый банк задач (ADR-0016): AI_GENERATED, проверены тестами репозитория.
+STARTER_BANK_FILES = ("bank/math_profile.yaml", "bank/informatics.yaml")
 
 
 @dataclass(frozen=True)
@@ -75,6 +83,15 @@ class ImportResult:
     batch: ImportBatch | None  # None — нечего записывать или это был предпросмотр
 
 
+@dataclass(frozen=True)
+class DiagnosticStep:
+    """Следующий шаг диагностики: задача для решения или итог."""
+
+    session: DiagnosticSession
+    attempt: Attempt | None  # None — диагностика завершена
+    task: Task | None
+
+
 class TutorApp:
     def __init__(
         self,
@@ -96,6 +113,7 @@ class TutorApp:
         )
         self.mastery = MasteryService(repository, clock, settings.mastery, catalog)
         self.code = CodeService(repository, clock, sandbox, settings.app.sandbox, self.asset_path)
+        self.diagnostics = DiagnosticsService(repository, clock, settings.diagnostics, catalog)
 
     @classmethod
     def create(
@@ -220,13 +238,14 @@ class TutorApp:
             for skill in topic.skills
         }
 
-    def preview_import(self, path: Path) -> ImportReport:
+    def preview_import(self, path: Path, *, starter_bank: bool = False) -> ImportReport:
         """Проверить файл с задачами, ничего не записывая."""
         return build_report(
             path,
             specs=self.catalog.specs,
             skill_items=self._skill_items,
             existing_hashes=self.repository.active_task_hashes,
+            starter_bank=starter_bank,
         )
 
     @property
@@ -234,9 +253,9 @@ class TutorApp:
         """Папка, где лежат файлы к задачам (вне Git)."""
         return self.settings.data_dir / "private_content" / "assets"
 
-    def import_tasks(self, path: Path) -> ImportResult:
+    def import_tasks(self, path: Path, *, starter_bank: bool = False) -> ImportResult:
         """Записать задачи без ошибок одной пачкой. Ошибочные остаются в отчёте."""
-        report = self.preview_import(path)
+        report = self.preview_import(path, starter_bank=starter_bank)
         if report.file_error or not report.accepted:
             return ImportResult(report, None)
         batch = self.repository.add_import_batch(
@@ -410,3 +429,69 @@ class TutorApp:
     def start_review(self, subject: Subject | None = None) -> Attempt:
         """Начать повторение (режим REVIEW) по очереди повторений."""
         return self.start_attempt(self.next_review_task(subject).id, AttemptMode.REVIEW)
+
+    # ── стартовый банк и диагностика (Phase 5) ──────────────────────────────
+
+    def starter_bank_paths(self) -> list[Path]:
+        return [self.settings.content_dir / name for name in STARTER_BANK_FILES]
+
+    def install_starter_bank(self) -> list[ImportResult]:
+        """Загрузить стартовый банк. Уже загруженные задачи пропускаются как дубли."""
+        paths = self.starter_bank_paths()
+        missing = [p.name for p in paths if not p.exists()]
+        if missing:
+            raise AppError(f"файлы стартового банка не найдены: {', '.join(missing)}")
+        return [self.import_tasks(path, starter_bank=True) for path in paths]
+
+    def diagnostic_task_count(self, subject: Subject) -> int:
+        return len(self.diagnostics.eligible_tasks(subject))
+
+    def start_diagnostic(self, subject: Subject) -> DiagnosticSession:
+        """Начать диагностику по предмету или продолжить начатую."""
+        return self.diagnostics.start(subject)
+
+    def diagnostic_step(self, session_id: int) -> DiagnosticStep:
+        """Текущая задача диагностики; если её нет — выбрать следующую или завершить."""
+        session = self.diagnostics.session(session_id)
+        if session.status != DiagnosticStatus.ACTIVE:
+            return DiagnosticStep(session, None, None)
+        attempt = self.diagnostics.open_attempt(session_id)
+        if attempt is not None:
+            return DiagnosticStep(session, attempt, self.task(attempt.task_id))
+        choice = self.diagnostics.choose(session_id)
+        if choice.task is None:
+            assert choice.stop is not None
+            return DiagnosticStep(self.diagnostics.finish(session_id, choice.stop), None, None)
+        attempt = self.start_attempt(choice.task.id, AttemptMode.DIAGNOSTIC)
+        self.diagnostics.link(session_id, attempt.id)
+        return DiagnosticStep(session, attempt, choice.task)
+
+    def finish_diagnostic(self, session_id: int) -> DiagnosticSession:
+        """Завершить диагностику досрочно: baseline — по тому, что уже решено."""
+        session = self.diagnostics.session(session_id)
+        if session.status != DiagnosticStatus.ACTIVE:
+            raise AppError("эта диагностика уже завершена")
+        attempt = self.diagnostics.open_attempt(session_id)
+        if attempt is not None:
+            self.practice.abandon(attempt.id)
+        return self.diagnostics.finish(session_id, StopReason.USER)
+
+    def diagnostic_state(self, session_id: int) -> DiagnosticState:
+        return self.diagnostics.state(session_id)
+
+    def diagnostic_session(self, session_id: int) -> DiagnosticSession:
+        return self.diagnostics.session(session_id)
+
+    def diagnostic_sessions(
+        self, subject: Subject | None = None, limit: int = 20
+    ) -> list[DiagnosticSession]:
+        return self.diagnostics.sessions(subject, limit)
+
+    def active_diagnostic(self, subject: Subject) -> DiagnosticSession | None:
+        return self.diagnostics.active(subject)
+
+    def diagnostic_results(self, session_id: int) -> list[DiagnosticItemResult]:
+        return self.diagnostics.results(session_id)
+
+    def diagnostic_session_of_attempt(self, attempt_id: int) -> int | None:
+        return self.diagnostics.session_of_attempt(attempt_id)

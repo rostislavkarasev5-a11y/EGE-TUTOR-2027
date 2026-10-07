@@ -29,8 +29,11 @@ from ege_tutor.core.domain import (
     AttemptStatus,
     ClassifiedBy,
     CodeVerdict,
+    DiagnosticStatus,
     ImportBatchStatus,
+    ItemBasis,
     MistakeCategory,
+    StopReason,
     Subject,
     TaskSource,
     Verdict,
@@ -447,3 +450,49 @@ class MistakePatternRow(Base):
     independent_streak: Mapped[int]
     closed_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)
     priority: Mapped[float] = mapped_column(Float)
+
+
+class DiagnosticSessionRow(Base):
+    """Сессия адаптивной диагностики по предмету (ADR-0016). Не удаляется."""
+
+    __tablename__ = "diagnostic_session"
+    __table_args__ = (Index("ix_diagnostic_session_subject", "subject", "started_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject: Mapped[Subject] = mapped_column(_enum(Subject), ForeignKey("subject.code"))
+    status: Mapped[DiagnosticStatus] = mapped_column(_enum(DiagnosticStatus))
+    started_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)
+    stop_reason: Mapped[StopReason | None] = mapped_column(_enum(StopReason))
+    model_version: Mapped[str] = mapped_column(String(32))
+    forecast_mean: Mapped[float | None] = mapped_column(Float)
+    forecast_low: Mapped[float | None] = mapped_column(Float)
+    forecast_high: Mapped[float | None] = mapped_column(Float)
+    forecast_max_points: Mapped[int | None]
+    forecast_interval: Mapped[float | None] = mapped_column(Float)
+
+
+class DiagnosticAttemptRow(Base):
+    """Попытка, сделанная в рамках диагностики (сама попытка — в таблице attempt)."""
+
+    __tablename__ = "diagnostic_attempt"
+
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"), primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("diagnostic_session.id"), index=True)
+
+
+class DiagnosticResultRow(Base):
+    """Оценка номера по итогам диагностики — предварительный baseline."""
+
+    __tablename__ = "diagnostic_result"
+    __table_args__ = (
+        CheckConstraint("probability BETWEEN 0 AND 1", name="probability_range"),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="confidence_range"),
+    )
+
+    session_id: Mapped[int] = mapped_column(ForeignKey("diagnostic_session.id"), primary_key=True)
+    exam_item: Mapped[int] = mapped_column(primary_key=True)
+    probability: Mapped[float] = mapped_column(Float)
+    confidence: Mapped[float] = mapped_column(Float)
+    basis: Mapped[ItemBasis] = mapped_column(_enum(ItemBasis))
+    answered: Mapped[int]

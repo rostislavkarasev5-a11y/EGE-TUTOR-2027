@@ -30,6 +30,17 @@ from ege_tutor.subjects import SubjectTutor
 
 SOLUTION_LEVEL = 4
 FINISHED = (AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP)
+# Режимы без подсказок: диагностика (ADR-0016). Правило обеспечивает CORE, а не интерфейс.
+NO_HINT_MODES = frozenset({AttemptMode.DIAGNOSTIC})
+
+
+def final_answer_type(answer: str) -> AnswerType:
+    """Как проверять итоговый ответ задачи части 2: одно число или несколько через «;»."""
+    return AnswerType.SEQUENCE if len(answer.replace(";", " ").split()) > 1 else AnswerType.NUMBER
+
+
+def _final_answer(text: str) -> str:
+    return " ".join(text.replace(";", " ").split())
 
 
 @dataclass(frozen=True)
@@ -70,9 +81,13 @@ class PracticeService:
         return task
 
     @staticmethod
-    def why_not_practicable(task: Task) -> str | None:
-        """Почему задачу нельзя решать, или None, если можно."""
-        if task.answer_type == AnswerType.EXTENDED:
+    def why_not_practicable(task: Task, mode: AttemptMode = AttemptMode.PRACTICE) -> str | None:
+        """Почему задачу нельзя решать, или None, если можно.
+
+        В диагностике задачу части 2 можно решать по итоговому ответу (ADR-0016).
+        """
+        by_final_answer = mode == AttemptMode.DIAGNOSTIC and task.answer is not None
+        if task.answer_type == AnswerType.EXTENDED and not by_final_answer:
             return (
                 f"задача №{task.id} с развёрнутым ответом: решение по критериям ФИПИ "
                 "появится в Phase 8"
@@ -140,7 +155,7 @@ class PracticeService:
 
     def start(self, task_id: int, mode: AttemptMode = AttemptMode.PRACTICE) -> Attempt:
         task = self._task(task_id)
-        reason = self.why_not_practicable(task)
+        reason = self.why_not_practicable(task, mode)
         if reason:
             raise AppError(reason)
         now = self._clock.now()
@@ -172,6 +187,8 @@ class PracticeService:
     def next_hint(self, attempt_id: int) -> ShownHint:
         """Следующая подсказка: ближайший записанный уровень выше уже показанного."""
         attempt = self._open_attempt(attempt_id)
+        if attempt.mode in NO_HINT_MODES:
+            raise AppError("в диагностике подсказок нет: она измеряет, что ты умеешь сам")
         task = self._task(attempt.task_id)
         level = next(
             (lv for lv in self.available_hint_levels(task) if lv > attempt.max_hint_level), None
@@ -216,7 +233,14 @@ class PracticeService:
             raise AppError("пустой ответ")
         task = self._task(attempt.task_id)
         assert task.answer is not None  # гарантирует start()
-        check = self._tutor_for(task.subject).check_answer(task.answer_type, task.answer, answer)
+        tutor = self._tutor_for(task.subject)
+        if task.answer_type == AnswerType.EXTENDED:
+            # часть 2 в диагностике: сверяется только итоговый ответ
+            check = tutor.check_answer(
+                final_answer_type(task.answer), _final_answer(task.answer), _final_answer(answer)
+            )
+        else:
+            check = tutor.check_answer(task.answer_type, task.answer, answer)
         finished = self._repo.finish_attempt(
             attempt.id,
             status=AttemptStatus.ANSWERED,

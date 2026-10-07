@@ -293,3 +293,26 @@ def test_mastery_mistakes_queue_and_repeat():
     assert "верно" in repeat.output
     assert "REVIEW" not in repeat.output  # режим не показывается как код
     assert "Пересчитано навыков" in invoke("recalc").output
+
+
+def test_bank_and_diagnostic():
+    """Phase 5: стартовый банк, диагностика с паузой и итог."""
+    assert "ege diagnose" in invoke("diagnostics").output  # ещё не было
+    loaded = invoke("bank")
+    assert loaded.exit_code == 0, loaded.output
+    assert "math_profile.yaml: добавлено 57" in loaded.output
+    assert "уже были в базе 57" in invoke("bank").output
+
+    paused = runner.invoke(app, ["diagnose", "math"], input="?\n0\nсдаюсь\nвыход\n")
+    assert paused.exit_code == 0, paused.output
+    assert "подсказок нет" in paused.output and "Задача 3" in paused.output
+    assert "Продолжить: ege diagnose math" in paused.output
+
+    finished = runner.invoke(app, ["diagnose", "math"], input="закончить\n")
+    assert finished.exit_code == 0, finished.output
+    assert "ты завершил диагностику сам" in finished.output
+    assert "Прогноз:" in finished.output and "выведено косвенно" in finished.output
+    history = invoke("diagnostics")
+    assert "завершена" in history.output
+    assert "Прогноз" in invoke("diagnostics", "1").output
+    assert invoke("diagnostics", "99").exit_code == 1

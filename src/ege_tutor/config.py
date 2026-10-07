@@ -197,8 +197,24 @@ class DiagnosticsBudget(_Strict):
 
 
 class DiagnosticsStopping(_Strict):
-    target_forecast_half_width: PositiveWeight
+    target_half_width_primary: PositiveWeight
+    forecast_interval: Annotated[float, Field(gt=0.0, lt=1.0)]
     min_information_gain: Annotated[float, Field(ge=0.0)]
+
+
+class DiagnosticsModel(_Strict):
+    """Модель «уровень ученика против сложности задачи» (ADR-0016)."""
+
+    model_version: Annotated[str, Field(min_length=1)]
+    ability_prior_sd: PositiveWeight
+    item_offset_sd: PositiveWeight
+    grid_step: Annotated[float, Field(gt=0.0, le=1.0)]
+    ability_grid_limit: PositiveWeight
+    offset_grid_limit: PositiveWeight
+    guess: Annotated[float, Field(ge=0.0, lt=1.0)]
+    slow_evidence: Factor
+    first_difficulty: Annotated[int, Field(ge=1, le=5)]
+    reference_difficulty: Annotated[int, Field(ge=1, le=5)]
 
 
 class DiagnosticsRules(_Strict):
@@ -211,6 +227,7 @@ class DiagnosticsRules(_Strict):
 class DiagnosticsConfig(_Strict):
     budget: DiagnosticsBudget
     stopping: DiagnosticsStopping
+    model: DiagnosticsModel
     rules: DiagnosticsRules
 
 

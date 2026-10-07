@@ -23,12 +23,16 @@ from ege_tutor import __version__
 from ege_tutor.core.app import AppError, TutorApp
 from ege_tutor.core.domain import (
     CODE_VERDICT_LABELS,
+    ITEM_BASIS_NAMES,
     MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
+    STOP_REASON_NAMES,
     AnswerType,
     AttemptStatus,
     CodeVerdict,
+    DiagnosticStatus,
     ImportBatchStatus,
+    ItemBasis,
     MistakeCategory,
     ReviewReason,
     Subject,
@@ -209,6 +213,10 @@ def create_app(
         MistakeCategory=MistakeCategory,
         MISTAKE_CATEGORY_NAMES=MISTAKE_CATEGORY_NAMES,
         REVIEW_REASON_NAMES=REVIEW_REASON_NAMES,
+        ITEM_BASIS_NAMES=ITEM_BASIS_NAMES,
+        STOP_REASON_NAMES=STOP_REASON_NAMES,
+        ItemBasis=ItemBasis,
+        DiagnosticStatus=DiagnosticStatus,
         skill_title=tutor.skill_title,
         time_limit=f"{tutor.settings.app.sandbox.time_limit_seconds:g}",
         memory_limit=tutor.settings.app.sandbox.memory_limit_mb,
@@ -422,6 +430,87 @@ def create_app(
             return redirect("/")
         return redirect(f"/attempts/{attempt.id}")
 
+    # ── стартовый банк и диагностика (Phase 5) ──
+
+    @app.get("/diagnostics", response_class=HTMLResponse)
+    def diagnostics_page(request: Request):
+        require_login(request)
+        subjects = [
+            {
+                "subject": s,
+                "tasks": core.diagnostic_task_count(s),
+                "active": core.active_diagnostic(s),
+            }
+            for s in Subject
+        ]
+        budget = tutor.settings.diagnostics.budget
+        return render(
+            request,
+            "diagnostics.html",
+            subjects=subjects,
+            sessions=core.diagnostic_sessions(),
+            max_tasks=budget.max_tasks_per_subject,
+            max_minutes=budget.max_minutes_per_subject,
+        )
+
+    @app.post("/bank")
+    async def install_bank(request: Request):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            results = await run_in_threadpool(core.install_starter_bank)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/diagnostics")
+        added = sum(len(r.report.accepted) for r in results if r.batch is not None)
+        flash(request, f"Стартовый банк загружен: добавлено задач {added}.", "success")
+        return redirect("/diagnostics")
+
+    @app.post("/diagnostics/start")
+    async def start_diagnostic(request: Request, subject: Annotated[str, Form()] = ""):
+        require_login(request)
+        await check_csrf(request)
+        chosen = _parse_subject(subject)
+        if chosen is None:
+            flash(request, "выбери предмет", "error")
+            return redirect("/diagnostics")
+        try:
+            session = core.start_diagnostic(chosen)
+            return after_diagnostic_answer(session.id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/diagnostics")
+
+    @app.get("/diagnostics/{session_id}", response_class=HTMLResponse)
+    def diagnostic_page(request: Request, session_id: int):
+        require_login(request)
+        try:
+            state = core.diagnostic_state(session_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/diagnostics")
+        return render(request, "diagnostic.html", state=state)
+
+    @app.post("/diagnostics/{session_id}/continue")
+    async def continue_diagnostic(request: Request, session_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            return after_diagnostic_answer(session_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(f"/diagnostics/{session_id}")
+
+    @app.post("/diagnostics/{session_id}/finish")
+    async def finish_diagnostic(request: Request, session_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            core.finish_diagnostic(session_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+        return redirect(f"/diagnostics/{session_id}")
+
     # ── задачи ──
 
     @app.get("/tasks", response_class=HTMLResponse)
@@ -519,6 +608,10 @@ def create_app(
         except AppError as e:
             flash(request, str(e), "error")
             return redirect("/")
+        session_id = core.diagnostic_session_of_attempt(attempt_id)
+        if session_id is not None and attempt.status != AttemptStatus.IN_PROGRESS:
+            # ответы диагностики не показываются по одному: итог — на странице диагностики
+            return redirect(f"/diagnostics/{session_id}")
         notes = request.session.get("result_notes", {})
         subject, item = request.session.get("solve_filter", ["", ""])
         runs = []
@@ -541,7 +634,15 @@ def create_app(
             started_iso=attempt.started_at.isoformat(),
             filter_subject=subject,
             filter_item=item,
+            diagnostic=core.diagnostic_state(session_id) if session_id is not None else None,
         )
+
+    def after_diagnostic_answer(session_id: int):
+        """После ответа в диагностике — сразу следующая задача или итог."""
+        step = core.diagnostic_step(session_id)
+        if step.attempt is not None:
+            return redirect(f"/attempts/{step.attempt.id}")
+        return redirect(f"/diagnostics/{session_id}")
 
     @app.post("/attempts/{attempt_id}/answer")
     async def submit_answer(request: Request, attempt_id: int, answer: Annotated[str, Form()] = ""):
@@ -552,6 +653,9 @@ def create_app(
         except AppError as e:
             flash(request, str(e), "error")
             return redirect(f"/attempts/{attempt_id}")
+        session_id = core.diagnostic_session_of_attempt(attempt_id)
+        if session_id is not None:
+            return after_diagnostic_answer(session_id)
         notes = request.session.get("result_notes", {})
         notes = dict(list(notes.items())[-9:])  # храним пояснения к последним попыткам
         notes[str(attempt_id)] = result.check.explanation
@@ -588,12 +692,19 @@ def create_app(
             core.give_up(attempt_id)
         except AppError as e:
             flash(request, str(e), "error")
+            return redirect(f"/attempts/{attempt_id}")
+        session_id = core.diagnostic_session_of_attempt(attempt_id)
+        if session_id is not None:
+            return after_diagnostic_answer(session_id)
         return redirect(f"/attempts/{attempt_id}")
 
     @app.post("/attempts/{attempt_id}/similar")
     async def similar(request: Request, attempt_id: int):
         require_login(request)
         await check_csrf(request)
+        if core.diagnostic_session_of_attempt(attempt_id) is not None:
+            flash(request, "в диагностике похожих задач и подсказок нет", "warning")
+            return redirect(f"/attempts/{attempt_id}")
         try:
             attempt = core.attempt(attempt_id)
             if attempt.status == AttemptStatus.IN_PROGRESS:

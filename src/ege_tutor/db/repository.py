@@ -19,8 +19,12 @@ from ege_tutor.core.domain import (
     ClassifiedBy,
     CodeRun,
     CodeVerdict,
+    DiagnosticItemResult,
+    DiagnosticSession,
+    DiagnosticStatus,
     ExamSpec,
     ExamSpecItem,
+    Forecast,
     HintEvent,
     ImportBatch,
     ImportBatchStatus,
@@ -32,6 +36,7 @@ from ege_tutor.core.domain import (
     MistakePattern,
     Prediction,
     Skill,
+    StopReason,
     StudentProfile,
     Subject,
     Task,
@@ -49,6 +54,9 @@ from ege_tutor.db.engine import is_migrated, make_engine, upgrade_to_head
 from ege_tutor.db.models import (
     AttemptRow,
     CodeRunRow,
+    DiagnosticAttemptRow,
+    DiagnosticResultRow,
+    DiagnosticSessionRow,
     ExamSpecItemRow,
     ExamSpecRow,
     HintEventRow,
@@ -966,4 +974,150 @@ class SqlRepository:
                     r.priority,
                 )
                 for r in s.scalars(query)
+            ]
+
+    # ── диагностика (Phase 5) ───────────────────────────────────────────────
+
+    @staticmethod
+    def _diagnostic_session(row: DiagnosticSessionRow) -> DiagnosticSession:
+        forecast = None
+        if row.forecast_mean is not None:
+            assert row.forecast_low is not None and row.forecast_high is not None
+            assert row.forecast_max_points is not None and row.forecast_interval is not None
+            forecast = Forecast(
+                mean=row.forecast_mean,
+                low=row.forecast_low,
+                high=row.forecast_high,
+                max_points=row.forecast_max_points,
+                interval=row.forecast_interval,
+            )
+        return DiagnosticSession(
+            id=row.id,
+            subject=row.subject,
+            status=row.status,
+            started_at=row.started_at,
+            finished_at=row.finished_at,
+            stop_reason=row.stop_reason,
+            model_version=row.model_version,
+            forecast=forecast,
+        )
+
+    def create_diagnostic_session(
+        self, subject: Subject, model_version: str, started_at: dt.datetime
+    ) -> DiagnosticSession:
+        with self._session.begin() as s:
+            row = DiagnosticSessionRow(
+                subject=subject,
+                status=DiagnosticStatus.ACTIVE,
+                started_at=started_at,
+                model_version=model_version,
+            )
+            s.add(row)
+            s.flush()
+            return self._diagnostic_session(row)
+
+    def get_diagnostic_session(self, session_id: int) -> DiagnosticSession | None:
+        with self._session() as s:
+            row = s.get(DiagnosticSessionRow, session_id)
+            return self._diagnostic_session(row) if row else None
+
+    def active_diagnostic_session(self, subject: Subject) -> DiagnosticSession | None:
+        query = (
+            select(DiagnosticSessionRow)
+            .where(
+                DiagnosticSessionRow.subject == subject,
+                DiagnosticSessionRow.status == DiagnosticStatus.ACTIVE,
+            )
+            .order_by(DiagnosticSessionRow.started_at.desc(), DiagnosticSessionRow.id.desc())
+        )
+        with self._session() as s:
+            row = s.scalars(query).first()
+            return self._diagnostic_session(row) if row else None
+
+    def list_diagnostic_sessions(
+        self, subject: Subject | None = None, limit: int = 20
+    ) -> list[DiagnosticSession]:
+        query = select(DiagnosticSessionRow).order_by(
+            DiagnosticSessionRow.started_at.desc(), DiagnosticSessionRow.id.desc()
+        )
+        if subject is not None:
+            query = query.where(DiagnosticSessionRow.subject == subject)
+        with self._session() as s:
+            return [self._diagnostic_session(row) for row in s.scalars(query.limit(limit))]
+
+    def add_diagnostic_attempt(self, session_id: int, attempt_id: int) -> None:
+        with self._session.begin() as s:
+            s.add(DiagnosticAttemptRow(session_id=session_id, attempt_id=attempt_id))
+
+    def diagnostic_attempts(self, session_id: int) -> list[tuple[Attempt, int | None]]:
+        query = (
+            select(AttemptRow, TaskRow.difficulty)
+            .join(DiagnosticAttemptRow, DiagnosticAttemptRow.attempt_id == AttemptRow.id)
+            .join(TaskRow, TaskRow.id == AttemptRow.task_id)
+            .where(DiagnosticAttemptRow.session_id == session_id)
+            .order_by(AttemptRow.started_at, AttemptRow.id)
+        )
+        with self._session() as s:
+            return [(self._attempt(row), difficulty) for row, difficulty in s.execute(query)]
+
+    def diagnostic_session_of_attempt(self, attempt_id: int) -> int | None:
+        with self._session() as s:
+            row = s.get(DiagnosticAttemptRow, attempt_id)
+            return row.session_id if row else None
+
+    def finish_diagnostic_session(
+        self,
+        session_id: int,
+        *,
+        status: DiagnosticStatus,
+        at: dt.datetime,
+        reason: StopReason | None,
+        forecast: Forecast | None,
+        results: Sequence[DiagnosticItemResult],
+    ) -> DiagnosticSession:
+        with self._session.begin() as s:
+            row = s.get(DiagnosticSessionRow, session_id)
+            if row is None:
+                raise RepositoryError(f"диагностика №{session_id} не найдена")
+            if row.status != DiagnosticStatus.ACTIVE:
+                raise RepositoryError(f"диагностика №{session_id} уже завершена")
+            row.status = status
+            row.finished_at = at
+            row.stop_reason = reason
+            if forecast is not None:
+                row.forecast_mean = forecast.mean
+                row.forecast_low = forecast.low
+                row.forecast_high = forecast.high
+                row.forecast_max_points = forecast.max_points
+                row.forecast_interval = forecast.interval
+            for result in results:
+                s.add(
+                    DiagnosticResultRow(
+                        session_id=session_id,
+                        exam_item=result.exam_item,
+                        probability=result.probability,
+                        confidence=result.confidence,
+                        basis=result.basis,
+                        answered=result.answered,
+                    )
+                )
+            s.flush()
+            return self._diagnostic_session(row)
+
+    def diagnostic_results(self, session_id: int) -> list[DiagnosticItemResult]:
+        query = (
+            select(DiagnosticResultRow)
+            .where(DiagnosticResultRow.session_id == session_id)
+            .order_by(DiagnosticResultRow.exam_item)
+        )
+        with self._session() as s:
+            return [
+                DiagnosticItemResult(
+                    exam_item=row.exam_item,
+                    probability=row.probability,
+                    confidence=row.confidence,
+                    basis=row.basis,
+                    answered=row.answered,
+                )
+                for row in s.scalars(query)
             ]

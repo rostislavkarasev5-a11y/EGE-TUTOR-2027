@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field with context %}
+{% block content %}
+<h1>Диагностика</h1>
+<p class="meta">Адаптивная диагностика определяет стартовый уровень: каждая следующая задача выбирается так,
+  чтобы как можно точнее уточнить прогноз. Без подсказок, с таймером, не больше
+  {{ max_tasks }} задач и {{ max_minutes }} минут на предмет. Можно прервать и продолжить позже.</p>
+
+{% for s in subjects %}
+<section class="card">
+  <h2>{{ SUBJECT_NAMES[s.subject] }}</h2>
+  {% if s.active %}
+  <p>Диагностика идёт с {{ s.active.started_at|utc_time }}.</p>
+  <form method="post" action="/diagnostics/{{ s.active.id }}/continue">
+    {{ csrf_field() }}
+    <button type="submit">Продолжить</button>
+  </form>
+  {% elif s.tasks %}
+  <p>Проверенных задач для диагностики: {{ s.tasks }}.</p>
+  <form method="post" action="/diagnostics/start">
+    {{ csrf_field() }}
+    <input type="hidden" name="subject" value="{{ s.subject.value }}">
+    <button type="submit">Начать диагностику</button>
+  </form>
+  {% else %}
+  <p>Для диагностики нет проверенных задач.</p>
+  {% endif %}
+</section>
+{% endfor %}
+
+<section class="card">
+  <h2>Стартовый банк задач</h2>
+  <p>По 3 задачи на каждый номер ЕГЭ обоих предметов. Их написал ИИ (это <strong>не задания ФИПИ</strong>),
+    а ответ каждой проверен автоматическими тестами. Уже загруженные задачи повторно не добавляются.</p>
+  <form method="post" action="/bank">
+    {{ csrf_field() }}
+    <button type="submit" class="secondary">Загрузить стартовый банк</button>
+  </form>
+</section>
+
+{% if sessions %}
+<section class="card">
+  <h2>Прошлые диагностики</h2>
+  <table>
+    <tr><th>Предмет</th><th>Начата</th><th>Статус</th><th>Прогноз (первичные баллы)</th></tr>
+    {% for d in sessions %}
+    <tr>
+      <td><a href="/diagnostics/{{ d.id }}">{{ SUBJECT_NAMES[d.subject] }}</a></td>
+      <td>{{ d.started_at|utc_time }}</td>
+      <td>{% if d.status == DiagnosticStatus.ACTIVE %}идёт{% elif d.status == DiagnosticStatus.FINISHED %}завершена{% else %}брошена{% endif %}</td>
+      <td>{% if d.forecast %}{{ d.forecast.mean|round|int }} из {{ d.forecast.max_points }}
+        ({{ d.forecast.low|round|int }}–{{ d.forecast.high|round|int }}){% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}
