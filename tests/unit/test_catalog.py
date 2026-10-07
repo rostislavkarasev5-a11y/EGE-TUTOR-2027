@@ -80,3 +80,9 @@ def test_validation_rejects_uncovered_item(catalog):
 def test_missing_content_dir_is_reported(tmp_path):
     with pytest.raises(CatalogError, match="не найден"):
         load_catalog(tmp_path)
+
+
+def test_time_norms_fill_the_whole_exam(catalog):
+    for spec in catalog.specs.values():
+        assert sum(i.time_norm_seconds for i in spec.items) == spec.duration_minutes * 60
+        assert "не ФИПИ" in spec.time_norm_source

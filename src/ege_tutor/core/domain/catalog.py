@@ -20,6 +20,7 @@ class ExamSpecItem:
     part: int
     answer_kind: AnswerKind
     max_points: int
+    time_norm_seconds: int  # оценка проекта, а не ФИПИ (см. ExamSpec.time_norm_source)
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,7 @@ class ExamSpec:
     source: str
     duration_minutes: int
     items: tuple[ExamSpecItem, ...]
+    time_norm_source: str
 
     @property
     def max_primary_score(self) -> int:

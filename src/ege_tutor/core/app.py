@@ -13,6 +13,8 @@ from ege_tutor.ai import DisabledAIService
 from ege_tutor.config import Settings, load_settings
 from ege_tutor.core.clock import SystemClock
 from ege_tutor.core.domain import (
+    Attempt,
+    AttemptMode,
     Catalog,
     ExamSpec,
     ImportBatch,
@@ -24,17 +26,16 @@ from ege_tutor.core.domain import (
     TaskSource,
     Topic,
 )
+from ege_tutor.core.errors import AppError
 from ege_tutor.core.ports import AIService, Clock, Repository, RepositoryError, Sandbox
 from ege_tutor.core.services.catalog import load_catalog
 from ege_tutor.core.services.content_import import build_report
+from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
 from ege_tutor.sandbox import UnavailableSandbox
+from ege_tutor.subjects import tutor_for
 
-CURRENT_PHASE = 1
+CURRENT_PHASE = 2
 DB_FILE_NAME = "ege.db"
-
-
-class AppError(Exception):
-    """Ошибка, которую можно показать пользователю как есть."""
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,9 @@ class TutorApp:
         self.sandbox = sandbox
         self.repository = repository
         self.catalog = catalog
+        self.practice = PracticeService(
+            repository, clock, settings.mastery, tutor_for, self._time_norm
+        )
 
     @classmethod
     def create(
@@ -232,3 +236,43 @@ class TutorApp:
     def asset_path(self, asset: TaskAsset) -> Path:
         """Где на диске лежит файл задачи."""
         return self.asset_root / asset.stored_path
+
+    # ── решение задач (Phase 2) ─────────────────────────────────────────────
+
+    def _time_norm(self, subject: Subject, exam_item: int) -> int | None:
+        spec = self.catalog.specs.get(subject)
+        item = spec.item(exam_item) if spec else None
+        return item.time_norm_seconds if item else None
+
+    def next_task(self, subject: Subject | None = None, exam_item: int | None = None) -> Task:
+        """Какую задачу решать: проверенную, которую решали реже и давнее всего."""
+        return self.practice.next_task(subject, exam_item)
+
+    def similar_task(self, task_id: int) -> Task | None:
+        return self.practice.similar_task(task_id)
+
+    def start_attempt(self, task_id: int, mode: AttemptMode = AttemptMode.PRACTICE) -> Attempt:
+        return self.practice.start(task_id, mode)
+
+    def next_hint(self, attempt_id: int) -> ShownHint:
+        return self.practice.next_hint(attempt_id)
+
+    def submit_answer(self, attempt_id: int, answer: str) -> AttemptResult:
+        return self.practice.submit(attempt_id, answer)
+
+    def give_up(self, attempt_id: int) -> Attempt:
+        return self.practice.give_up(attempt_id)
+
+    def abandon_attempt(self, attempt_id: int) -> Attempt:
+        return self.practice.abandon(attempt_id)
+
+    def attempts(self, task_id: int | None = None, limit: int = 50) -> list[Attempt]:
+        return self.repository.list_attempts(task_id, limit)
+
+    def review_task(self, task_id: int, answer_is_correct: bool) -> Task:
+        return self.practice.review(task_id, answer_is_correct)
+
+    def next_unverified_task(
+        self, subject: Subject | None = None, exam_item: int | None = None
+    ) -> Task | None:
+        return self.practice.next_unverified(subject, exam_item)

@@ -11,9 +11,13 @@ from sqlalchemy import Engine, delete, func, select
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from ege_tutor.core.domain import (
+    Attempt,
+    AttemptMode,
+    AttemptStatus,
     Catalog,
     ExamSpec,
     ExamSpecItem,
+    HintEvent,
     ImportBatch,
     ImportBatchStatus,
     Skill,
@@ -22,15 +26,19 @@ from ege_tutor.core.domain import (
     Task,
     TaskAsset,
     TaskDraft,
+    TaskHint,
     TaskSource,
     Topic,
+    Verdict,
     VerificationStatus,
 )
 from ege_tutor.core.ports.repository import RepositoryError
 from ege_tutor.db.engine import is_migrated, make_engine, upgrade_to_head
 from ege_tutor.db.models import (
+    AttemptRow,
     ExamSpecItemRow,
     ExamSpecRow,
+    HintEventRow,
     ImportBatchRow,
     SkillExamItemRow,
     SkillPrerequisiteRow,
@@ -39,6 +47,7 @@ from ege_tutor.db.models import (
     StudentTargetRow,
     SubjectRow,
     TaskAssetRow,
+    TaskHintRow,
     TaskRow,
     TaskSkillRow,
     TopicRow,
@@ -51,6 +60,13 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+_TASK_LOAD = (
+    selectinload(TaskRow.skills),
+    selectinload(TaskRow.assets),
+    selectinload(TaskRow.hints),
+)
 
 
 class SqlRepository:
@@ -113,6 +129,7 @@ class SqlRepository:
                 row.status = spec.status
                 row.source = spec.source
                 row.duration_minutes = spec.duration_minutes
+                row.time_norm_source = spec.time_norm_source
                 existing = {item.number: item for item in row.items}
                 wanted = {i.number for i in spec.items}
                 row.items = [item for item in row.items if item.number in wanted]
@@ -125,6 +142,7 @@ class SqlRepository:
                     item.part = i.part
                     item.answer_kind = i.answer_kind
                     item.max_points = i.max_points
+                    item.time_norm_seconds = i.time_norm_seconds
                 s.add(row)
             s.flush()
 
@@ -201,9 +219,12 @@ class SqlRepository:
                 source=row.source,
                 duration_minutes=row.duration_minutes,
                 items=tuple(
-                    ExamSpecItem(i.number, i.title, i.part, i.answer_kind, i.max_points)
+                    ExamSpecItem(
+                        i.number, i.title, i.part, i.answer_kind, i.max_points, i.time_norm_seconds
+                    )
                     for i in row.items
                 ),
+                time_norm_source=row.time_norm_source,
             )
 
     # ── задачи и импорт ─────────────────────────────────────────────────────
@@ -268,6 +289,7 @@ class SqlRepository:
                         is_active=True,
                         created_at=created_at,
                         skills=[TaskSkillRow(skill_code=code) for code in d.skills],
+                        hints=[TaskHintRow(level=h.level, text=h.text) for h in d.hints],
                     )
                     for source_path in map(Path, d.asset_paths):
                         stored, is_new = self._store_asset(source_path, asset_root)
@@ -357,6 +379,8 @@ class SqlRepository:
             content_hash=row.content_hash,
             import_batch_id=row.import_batch_id,
             created_at=row.created_at,
+            hints=tuple(TaskHint(h.level, h.text) for h in row.hints),
+            verified_at=row.verified_at,
         )
 
     def list_tasks(
@@ -375,9 +399,7 @@ class SqlRepository:
             query = query.where(TaskRow.source == source)
         query = query.order_by(TaskRow.subject, TaskRow.exam_item, TaskRow.id).limit(limit)
         with self._session() as s:
-            rows = s.scalars(
-                query.options(selectinload(TaskRow.skills), selectinload(TaskRow.assets))
-            ).all()
+            rows = s.scalars(query.options(*_TASK_LOAD)).all()
             return [self._task(r) for r in rows]
 
     def count_tasks(self) -> int:
@@ -389,6 +411,164 @@ class SqlRepository:
             row = s.get(
                 TaskRow,
                 task_id,
-                options=[selectinload(TaskRow.skills), selectinload(TaskRow.assets)],
+                options=[*_TASK_LOAD],
             )
             return self._task(row) if row is not None and row.is_active else None
+
+    def set_verification_status(
+        self, task_id: int, status: VerificationStatus, at: dt.datetime
+    ) -> Task:
+        with self._session.begin() as s:
+            row = s.get(TaskRow, task_id, options=[*_TASK_LOAD])
+            if row is None or not row.is_active:
+                raise RepositoryError(f"задача №{task_id} не найдена")
+            row.verification_status = status
+            row.verified_at = at
+            s.flush()
+            return self._task(row)
+
+    # ── попытки ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _attempt(row: AttemptRow) -> Attempt:
+        return Attempt(
+            id=row.id,
+            task_id=row.task_id,
+            subject=row.task.subject,
+            exam_item=row.task.exam_item,
+            mode=row.mode,
+            attempt_no=row.attempt_no,
+            status=row.status,
+            started_at=row.started_at,
+            finished_at=row.finished_at,
+            answer=row.answer,
+            verdict=row.verdict,
+            max_hint_level=row.max_hint_level,
+            time_norm_seconds=row.time_norm_seconds,
+        )
+
+    def create_attempt(
+        self,
+        *,
+        task_id: int,
+        mode: AttemptMode,
+        attempt_no: int,
+        started_at: dt.datetime,
+        max_hint_level: int,
+        time_norm_seconds: int | None,
+    ) -> Attempt:
+        with self._session.begin() as s:
+            row = AttemptRow(
+                task_id=task_id,
+                mode=mode,
+                attempt_no=attempt_no,
+                status=AttemptStatus.IN_PROGRESS,
+                started_at=started_at,
+                max_hint_level=max_hint_level,
+                time_norm_seconds=time_norm_seconds,
+            )
+            s.add(row)
+            s.flush()
+            return self._attempt(row)
+
+    def get_attempt(self, attempt_id: int) -> Attempt | None:
+        with self._session() as s:
+            row = s.get(AttemptRow, attempt_id)
+            return self._attempt(row) if row is not None else None
+
+    def last_finished_attempt(self, task_id: int) -> Attempt | None:
+        with self._session() as s:
+            row = s.scalar(
+                select(AttemptRow)
+                .where(AttemptRow.task_id == task_id, AttemptRow.finished_at.is_not(None))
+                .order_by(AttemptRow.finished_at.desc(), AttemptRow.id.desc())
+                .limit(1)
+            )
+            return self._attempt(row) if row is not None else None
+
+    def count_attempts(self, task_id: int, statuses: Iterable[AttemptStatus]) -> int:
+        with self._session() as s:
+            return (
+                s.scalar(
+                    select(func.count()).where(
+                        AttemptRow.task_id == task_id, AttemptRow.status.in_(list(statuses))
+                    )
+                )
+                or 0
+            )
+
+    def attempt_stats(self, task_ids: Iterable[int]) -> dict[int, tuple[int, dt.datetime]]:
+        """Сколько раз задачу решали (с ответом или сдавшись) и когда последний раз."""
+        ids = list(task_ids)
+        if not ids:
+            return {}
+        done = [AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP]
+        with self._session() as s:
+            rows = s.execute(
+                select(AttemptRow.task_id, func.count(), func.max(AttemptRow.started_at))
+                .where(AttemptRow.task_id.in_(ids), AttemptRow.status.in_(done))
+                .group_by(AttemptRow.task_id)
+            ).all()
+        return {
+            task_id: (count, last if last.tzinfo else last.replace(tzinfo=dt.UTC))
+            for task_id, count, last in rows
+        }
+
+    def record_hint(self, attempt_id: int, level: int, at: dt.datetime) -> Attempt:
+        with self._session.begin() as s:
+            row = s.get(AttemptRow, attempt_id)
+            if row is None or row.status != AttemptStatus.IN_PROGRESS:
+                raise RepositoryError(f"попытка №{attempt_id} уже завершена")
+            s.add(HintEventRow(attempt_id=attempt_id, level=level, shown_at=at))
+            row.max_hint_level = max(row.max_hint_level, level)
+            s.flush()
+            return self._attempt(row)
+
+    def finish_attempt(
+        self,
+        attempt_id: int,
+        *,
+        status: AttemptStatus,
+        at: dt.datetime,
+        answer: str | None = None,
+        answer_normalized: str | None = None,
+        verdict: Verdict | None = None,
+    ) -> Attempt:
+        with self._session.begin() as s:
+            row = s.get(AttemptRow, attempt_id)
+            if row is None or row.status != AttemptStatus.IN_PROGRESS:
+                raise RepositoryError(f"попытка №{attempt_id} уже завершена")
+            row.status = status
+            row.finished_at = at
+            row.answer = answer
+            row.answer_normalized = answer_normalized
+            row.verdict = verdict
+            s.flush()
+            return self._attempt(row)
+
+    def abandon_in_progress(self, at: dt.datetime) -> int:
+        """Незавершённые попытки (например, программу закрыли) помечаются брошенными."""
+        with self._session.begin() as s:
+            rows = s.scalars(
+                select(AttemptRow).where(AttemptRow.status == AttemptStatus.IN_PROGRESS)
+            ).all()
+            for row in rows:
+                row.status = AttemptStatus.ABANDONED
+                row.finished_at = at
+            return len(rows)
+
+    def list_attempts(self, task_id: int | None = None, limit: int = 50) -> list[Attempt]:
+        query = select(AttemptRow).order_by(AttemptRow.started_at.desc(), AttemptRow.id.desc())
+        if task_id is not None:
+            query = query.where(AttemptRow.task_id == task_id)
+        with self._session() as s:
+            return [self._attempt(r) for r in s.scalars(query.limit(limit))]
+
+    def list_hint_events(self, attempt_id: int) -> list[HintEvent]:
+        with self._session() as s:
+            rows = s.scalars(
+                select(HintEventRow)
+                .where(HintEventRow.attempt_id == attempt_id)
+                .order_by(HintEventRow.id)
+            )
+            return [HintEvent(r.attempt_id, r.level, r.shown_at) for r in rows]

@@ -23,9 +23,12 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from ege_tutor.core.domain import (
     AnswerKind,
     AnswerType,
+    AttemptMode,
+    AttemptStatus,
     ImportBatchStatus,
     Subject,
     TaskSource,
+    Verdict,
     VerificationStatus,
 )
 
@@ -89,6 +92,7 @@ class ExamSpecRow(Base):
     status: Mapped[str] = mapped_column(String(32))
     source: Mapped[str] = mapped_column(Text)
     duration_minutes: Mapped[int]
+    time_norm_source: Mapped[str] = mapped_column(Text, server_default="")
 
     items: Mapped[list["ExamSpecItemRow"]] = relationship(
         back_populates="spec", cascade="all, delete-orphan", order_by="ExamSpecItemRow.number"
@@ -109,6 +113,7 @@ class ExamSpecItemRow(Base):
     part: Mapped[int]
     answer_kind: Mapped[AnswerKind] = mapped_column(_enum(AnswerKind))
     max_points: Mapped[int]
+    time_norm_seconds: Mapped[int] = mapped_column(server_default="0")
 
     spec: Mapped[ExamSpecRow] = relationship(back_populates="items")
 
@@ -228,6 +233,9 @@ class TaskRow(Base):
 
     skills: Mapped[list["TaskSkillRow"]] = relationship(cascade="all, delete-orphan")
     assets: Mapped[list["TaskAssetRow"]] = relationship(cascade="all, delete-orphan")
+    hints: Mapped[list["TaskHintRow"]] = relationship(
+        cascade="all, delete-orphan", order_by="TaskHintRow.level"
+    )
 
 
 class TaskSkillRow(Base):
@@ -248,3 +256,55 @@ class TaskAssetRow(Base):
     stored_path: Mapped[str] = mapped_column(Text)
     sha256: Mapped[str] = mapped_column(String(64))
     size_bytes: Mapped[int]
+
+
+class TaskHintRow(Base):
+    """Записанная подсказка к задаче. Уровни 1–3; уровень 4 — это solution задачи."""
+
+    __tablename__ = "task_hint"
+    __table_args__ = (CheckConstraint("level BETWEEN 1 AND 3", name="level_range"),)
+
+    task_id: Mapped[int] = mapped_column(ForeignKey("task.id"), primary_key=True)
+    level: Mapped[int] = mapped_column(primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+
+
+# ── попытки ─────────────────────────────────────────────────────────────────
+
+
+class AttemptRow(Base):
+    """Попытка решения. Строки никогда не удаляются (принцип 3)."""
+
+    __tablename__ = "attempt"
+    __table_args__ = (
+        CheckConstraint("max_hint_level BETWEEN 0 AND 4", name="max_hint_level_range"),
+        CheckConstraint("attempt_no >= 1", name="attempt_no_positive"),
+        Index("ix_attempt_task_started", "task_id", "started_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("task.id"))
+    mode: Mapped[AttemptMode] = mapped_column(_enum(AttemptMode))
+    attempt_no: Mapped[int]
+    status: Mapped[AttemptStatus] = mapped_column(_enum(AttemptStatus))
+    started_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)
+    answer: Mapped[str | None] = mapped_column(Text)  # как ввёл пользователь, без изменений
+    answer_normalized: Mapped[str | None] = mapped_column(Text)
+    verdict: Mapped[Verdict | None] = mapped_column(_enum(Verdict))
+    max_hint_level: Mapped[int] = mapped_column(default=0)
+    time_norm_seconds: Mapped[int | None] = mapped_column(Integer)
+
+    task: Mapped[TaskRow] = relationship()
+
+
+class HintEventRow(Base):
+    """Факт показа подсказки в попытке."""
+
+    __tablename__ = "hint_event"
+    __table_args__ = (CheckConstraint("level BETWEEN 1 AND 4", name="level_range"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"))
+    level: Mapped[int]
+    shown_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)

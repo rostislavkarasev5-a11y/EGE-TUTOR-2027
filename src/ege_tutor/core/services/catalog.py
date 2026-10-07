@@ -58,6 +58,7 @@ def _load_spec(path: Path, subject: Subject) -> ExamSpec:
                 part=int(i["part"]),
                 answer_kind=AnswerKind(i["answer_kind"]),
                 max_points=int(i["max_points"]),
+                time_norm_seconds=round(float(i["time_norm_minutes"]) * 60),
             )
             for i in data["items"]
         )
@@ -68,12 +69,15 @@ def _load_spec(path: Path, subject: Subject) -> ExamSpec:
             source=str(data["source"]),
             duration_minutes=int(data["duration_minutes"]),
             items=items,
+            time_norm_source=str(data["time_norm_source"]),
         )
     except (KeyError, TypeError, ValueError) as e:
         raise CatalogError(f"{path.name}: неверная структура ({e})") from e
     numbers = [i.number for i in items]
     if numbers != list(range(1, len(numbers) + 1)):
         raise CatalogError(f"{path.name}: номера заданий должны идти подряд с 1")
+    if any(i.time_norm_seconds <= 0 for i in items):
+        raise CatalogError(f"{path.name}: норматив времени должен быть положительным")
     return spec
 
 

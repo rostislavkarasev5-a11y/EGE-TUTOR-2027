@@ -23,6 +23,19 @@ SOURCE_LABELS: dict[TaskSource, str] = {
 }
 
 
+# Статусы, с которыми задачу можно решать (архитектура, раздел 5.6):
+# UNVERIFIED — только просмотр; DISPUTED и REJECTED сняты с выдачи.
+PRACTICE_STATUSES = frozenset({VerificationStatus.AUTO_CHECKED, VerificationStatus.REVIEWED})
+
+HINT_LEVELS = (1, 2, 3)  # записанные подсказки; 4 — полное решение, 5 — похожая задача
+
+
+@dataclass(frozen=True)
+class TaskHint:
+    level: int
+    text: str
+
+
 @dataclass(frozen=True)
 class TaskAsset:
     file_name: str
@@ -50,6 +63,7 @@ class TaskDraft:
     skills: tuple[str, ...]
     asset_paths: tuple[str, ...]
     content_hash: str
+    hints: tuple[TaskHint, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -72,6 +86,17 @@ class Task:
     content_hash: str
     import_batch_id: int | None
     created_at: dt.datetime
+    hints: tuple[TaskHint, ...] = ()
+    verified_at: dt.datetime | None = None
+
+    @property
+    def can_practice(self) -> bool:
+        """Задачу можно решать: ответ проверен и он краткий (часть 2 — с Phase 8)."""
+        return (
+            self.verification_status in PRACTICE_STATUSES
+            and self.answer_type != AnswerType.EXTENDED
+            and self.answer is not None
+        )
 
     @property
     def source_label(self) -> str:

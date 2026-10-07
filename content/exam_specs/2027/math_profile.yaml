@@ -6,99 +6,121 @@ exam_year: 2027
 status: provisional
 source: "Структура по демоверсии ФИПИ 2026; требует сверки с демоверсией 2027"
 duration_minutes: 235
+# Нормативы времени по заданиям (time_norm_minutes) — оценка EGE-TUTOR-2027, а не данные ФИПИ.
+# Сумма равна длительности экзамена. Уточняются по твоей статистике в будущих фазах.
+time_norm_source: "оценка EGE-TUTOR-2027, не ФИПИ"
 items:
   - number: 1
     title: "Планиметрия"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 3
   - number: 2
     title: "Векторы"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 3
   - number: 3
     title: "Стереометрия"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 4
   - number: 4
     title: "Начала теории вероятностей"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 3
   - number: 5
     title: "Вероятности сложных событий"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 5
   - number: 6
     title: "Простейшие уравнения"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 4
   - number: 7
     title: "Вычисления и преобразования"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 4
   - number: 8
     title: "Производная и первообразная"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 5
   - number: 9
     title: "Задачи с прикладным содержанием"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 6
   - number: 10
     title: "Текстовые задачи"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 6
   - number: 11
     title: "Графики функций"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 6
   - number: 12
     title: "Наибольшее и наименьшее значение функции"
     part: 1
     answer_kind: short
     max_points: 1
+    time_norm_minutes: 8
   - number: 13
     title: "Уравнения (развёрнутый ответ)"
     part: 2
     answer_kind: extended
     max_points: 2
+    time_norm_minutes: 20
   - number: 14
     title: "Стереометрическая задача"
     part: 2
     answer_kind: extended
     max_points: 3
+    time_norm_minutes: 25
   - number: 15
     title: "Неравенства"
     part: 2
     answer_kind: extended
     max_points: 2
+    time_norm_minutes: 20
   - number: 16
     title: "Экономическая задача"
     part: 2
     answer_kind: extended
     max_points: 2
+    time_norm_minutes: 25
   - number: 17
     title: "Планиметрическая задача"
     part: 2
     answer_kind: extended
     max_points: 3
+    time_norm_minutes: 25
   - number: 18
     title: "Задача с параметром"
     part: 2
     answer_kind: extended
     max_points: 4
+    time_norm_minutes: 35
   - number: 19
     title: "Числа и их свойства"
     part: 2
     answer_kind: extended
     max_points: 4
+    time_norm_minutes: 28

@@ -1,6 +1,6 @@
 [project]
 name = "ege-tutor"
-version = "0.1.0"
+version = "0.2.0"
 description = "EGE-TUTOR-2027: персональная система подготовки к ЕГЭ по профильной математике и информатике"
 readme = "README.md"
 requires-python = ">=3.13"
@@ -12,6 +12,7 @@ dependencies = [
     "pyyaml>=6.0.2,<7",
     "rich>=15,<16",
     "sqlalchemy>=2.1,<2.2",
+    "sympy>=1.14,<2",
     "typer>=0.27,<0.28",
 ]
 

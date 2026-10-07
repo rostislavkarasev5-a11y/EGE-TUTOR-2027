@@ -4,8 +4,12 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from ege_tutor.core.domain import (
+    Attempt,
+    AttemptMode,
+    AttemptStatus,
     Catalog,
     ExamSpec,
+    HintEvent,
     ImportBatch,
     StudentProfile,
     Subject,
@@ -13,6 +17,8 @@ from ege_tutor.core.domain import (
     TaskDraft,
     TaskSource,
     Topic,
+    Verdict,
+    VerificationStatus,
 )
 
 
@@ -27,7 +33,7 @@ class Repository(Protocol):
     CORE читает и пишет данные только через этот порт. Методы добавляются по фазам.
 
     Инварианты, которые обязана соблюдать любая реализация:
-    - сырые попытки пользователя никогда не удаляются из истории;
+    - сырые попытки пользователя никогда не удаляются из истории (нет метода удаления);
     - снимки mastery и прогнозов не переписываются задним числом;
     - задача не сохраняется без source, source_ref и verification_status;
     - откат импорта не удаляет записи, а выводит задачи из оборота (история сохраняется).
@@ -93,3 +99,50 @@ class Repository(Protocol):
         ...
 
     def get_task(self, task_id: int) -> Task | None: ...
+
+    def set_verification_status(
+        self, task_id: int, status: VerificationStatus, at: dt.datetime
+    ) -> Task: ...
+
+    # ── попытки (Phase 2) ──
+    def create_attempt(
+        self,
+        *,
+        task_id: int,
+        mode: AttemptMode,
+        attempt_no: int,
+        started_at: dt.datetime,
+        max_hint_level: int,
+        time_norm_seconds: int | None,
+    ) -> Attempt: ...
+
+    def get_attempt(self, attempt_id: int) -> Attempt | None: ...
+
+    def last_finished_attempt(self, task_id: int) -> Attempt | None: ...
+
+    def count_attempts(self, task_id: int, statuses: Iterable[AttemptStatus]) -> int: ...
+
+    def attempt_stats(self, task_ids: Iterable[int]) -> dict[int, tuple[int, dt.datetime]]:
+        """Сколько раз задачу решали (с ответом или сдавшись) и когда последний раз."""
+        ...
+
+    def record_hint(self, attempt_id: int, level: int, at: dt.datetime) -> Attempt:
+        """Записать показ подсказки и поднять максимальный уровень попытки."""
+        ...
+
+    def finish_attempt(
+        self,
+        attempt_id: int,
+        *,
+        status: AttemptStatus,
+        at: dt.datetime,
+        answer: str | None = None,
+        answer_normalized: str | None = None,
+        verdict: Verdict | None = None,
+    ) -> Attempt: ...
+
+    def abandon_in_progress(self, at: dt.datetime) -> int: ...
+
+    def list_attempts(self, task_id: int | None = None, limit: int = 50) -> list[Attempt]: ...
+
+    def list_hint_events(self, attempt_id: int) -> list[HintEvent]: ...
