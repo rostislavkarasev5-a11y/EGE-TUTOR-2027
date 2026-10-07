@@ -32,7 +32,7 @@ MATH / INFORMATICS tutors (src/ege_tutor/subjects/)
 
 ## Стек
 
-Python 3.13+, uv, SQLite, SQLAlchemy 2, Alembic, PyYAML (ADR-0010), Pydantic v2, Typer, Rich, pytest, Hypothesis, Ruff, GitHub Actions, SymPy (вспомогательно). anthropic SDK — только с Phase 6. FastAPI/Web — только в будущих фазах. Зависимость добавляется в фазе, где используется (ADR-0003).
+Python 3.13+, uv, SQLite, SQLAlchemy 2, Alembic, PyYAML (ADR-0010), Pydantic v2, Typer, Rich, pytest, Hypothesis, Ruff, GitHub Actions, SymPy (вспомогательно). anthropic SDK — только с Phase 6. FastAPI/Web — Phase 12, выполняется сразу после Phase 2 (ADR-0013). Зависимость добавляется в фазе, где используется (ADR-0003).
 
 ## Главные принципы
 

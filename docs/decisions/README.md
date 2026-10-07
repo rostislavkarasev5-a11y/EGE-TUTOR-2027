@@ -22,4 +22,4 @@ ADR — короткая запись одного архитектурного 
 | [0010](0010-pyyaml-for-content.md) | PyYAML для файлов контента | Accepted |
 | [0011](0011-import-batches-and-soft-rollback.md) | Импорт пачками, предпросмотр и мягкая отмена | Accepted |
 | [0012](0012-attempts-and-answer-checking.md) | Попытки, подсказки и проверка кратких ответов | Accepted |
-| [0013](0013-web-and-own-server.md) | Сайт на собственном сервере (VPS) | Proposed |
+| [0013](0013-web-and-own-server.md) | Сайт на собственном сервере (VPS) | Accepted |
