@@ -13,6 +13,13 @@ from ege_tutor.core.domain import (
     ExamSpec,
     HintEvent,
     ImportBatch,
+    MasteryRecord,
+    MasterySnapshot,
+    Mistake,
+    MistakeCategory,
+    MistakeDraft,
+    MistakePattern,
+    Prediction,
     StudentProfile,
     Subject,
     Task,
@@ -36,7 +43,8 @@ class Repository(Protocol):
 
     Инварианты, которые обязана соблюдать любая реализация:
     - сырые попытки и запуски программ никогда не удаляются из истории (нет метода удаления);
-    - снимки mastery и прогнозов не переписываются задним числом;
+    - снимки mastery и прогнозов за прошлые дни не переписываются задним числом;
+    - ошибки не удаляются: уточнение категории — новая запись, старая остаётся в истории;
     - задача не сохраняется без source, source_ref и verification_status;
     - откат импорта не удаляет записи, а выводит задачи из оборота (история сохраняется).
     """
@@ -178,3 +186,63 @@ class Repository(Protocol):
     ) -> list[CodeRun]:
         """Последние запуски, новые первыми."""
         ...
+
+    # ── mastery, ошибки, повторения (Phase 4) ──
+    def skill_history(self, skill_code: str) -> list[tuple[Attempt, int | None]]:
+        """Завершённые попытки (ответ или сдался) на задачи с навыком и сложность задачи."""
+        ...
+
+    def practiced_skills(self) -> list[str]: ...
+
+    def save_mastery(
+        self, records: Sequence[MasteryRecord], snapshots: Sequence[MasterySnapshot]
+    ) -> None: ...
+
+    def list_mastery(self, skill_codes: Iterable[str] | None = None) -> list[MasteryRecord]: ...
+
+    def list_snapshots(
+        self, skill_code: str | None = None, since: dt.date | None = None
+    ) -> list[MasterySnapshot]: ...
+
+    def add_prediction(
+        self,
+        *,
+        attempt_id: int,
+        task_id: int,
+        model_version: str,
+        predicted: float,
+        created_at: dt.datetime,
+    ) -> Prediction: ...
+
+    def resolve_prediction(self, attempt_id: int, outcome: int, at: dt.datetime) -> None: ...
+
+    def list_predictions(self, limit: int = 1000) -> list[Prediction]: ...
+
+    def add_mistakes(
+        self,
+        *,
+        attempt_id: int,
+        task_id: int,
+        skill_codes: Sequence[str | None],
+        draft: MistakeDraft,
+        created_at: dt.datetime,
+    ) -> list[Mistake]: ...
+
+    def get_mistake(self, mistake_id: int) -> Mistake | None: ...
+
+    def reclassify_mistake(
+        self, mistake_id: int, category: MistakeCategory, description: str, at: dt.datetime
+    ) -> Mistake: ...
+
+    def list_mistakes(
+        self,
+        *,
+        skill_code: str | None = None,
+        attempt_id: int | None = None,
+        current_only: bool = True,
+        limit: int = 200,
+    ) -> list[Mistake]: ...
+
+    def save_patterns(self, skill_code: str, patterns: Sequence[MistakePattern]) -> None: ...
+
+    def list_patterns(self, open_only: bool = True) -> list[MistakePattern]: ...

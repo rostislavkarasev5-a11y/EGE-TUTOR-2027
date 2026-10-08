@@ -16,15 +16,19 @@ from ege_tutor import __version__
 from ege_tutor.config import ConfigError
 from ege_tutor.core.app import AppError, TutorApp
 from ege_tutor.core.domain import (
+    MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
     AnswerKind,
     AnswerType,
     Attempt,
+    AttemptMode,
     AttemptStatus,
     CodeRun,
     CodeVerdict,
     ImportBatchStatus,
     ImportReport,
+    MistakeCategory,
+    ReviewReason,
     Subject,
     Task,
     TaskSource,
@@ -532,11 +536,13 @@ def _report_result(attempt: Attempt, explanation: str) -> None:
             )
 
 
-def _solve_one(tutor: TutorApp, t: Task) -> tuple[str, Task | None]:
+def _solve_one(
+    tutor: TutorApp, t: Task, mode: AttemptMode = AttemptMode.PRACTICE
+) -> tuple[str, Task | None]:
     """Решать задачу до верного ответа или отказа. Возвращает (что дальше, следующая задача)."""
     while True:
         try:
-            attempt = tutor.start_attempt(t.id)
+            attempt = tutor.start_attempt(t.id, mode)
         except AppError as e:
             raise _fail(str(e)) from e
         _show_task_for_solving(tutor, t, attempt)
@@ -564,6 +570,7 @@ def _solve_one(tutor: TutorApp, t: Task) -> tuple[str, Task | None]:
             if command in GIVE_UP_WORDS or command in SIMILAR_WORDS:
                 tutor.give_up(attempt.id)
                 _show_answer(t)
+                _report_mistakes(tutor, attempt.id)
                 if command in SIMILAR_WORDS:
                     similar = tutor.similar_task(t.id)
                     if similar is None:
@@ -577,12 +584,25 @@ def _solve_one(tutor: TutorApp, t: Task) -> tuple[str, Task | None]:
                 console.print(f"[yellow]{e}[/]")
                 continue
             _report_result(result.attempt, result.check.explanation)
+            _report_mistakes(tutor, attempt.id)
             if result.attempt.correct:
                 return "next", None
             if _ask_yes_no("Попробовать ещё раз?"):
                 break
             _show_answer(t)
             return "next", None
+
+
+def _report_mistakes(tutor: TutorApp, attempt_id: int) -> None:
+    """Показать, как программа поняла ошибку, и как это уточнить."""
+    mistakes = tutor.attempt_mistakes(attempt_id)
+    if not mistakes:
+        return
+    first = mistakes[0]
+    console.print(
+        f"[dim]Ошибка записана: {first.category_name} — {first.description}. "
+        f"Если причина другая: ege mistake {first.id} КАТЕГОРИЯ (список: ege mistake --help).[/]"
+    )
 
 
 @app.command()
@@ -704,6 +724,189 @@ def attempts(
             f"{_minutes(a.time_spent_seconds)} / {_minutes(a.time_norm_seconds)}",
         )
     console.print(table)
+
+
+# ── mastery, ошибки, повторения (Phase 4) ───────────────────────────────────
+
+REVIEW_REASON_NAMES = {
+    ReviewReason.FORGETTING: "пора повторить",
+    ReviewReason.MISTAKES: "частая ошибка",
+}
+
+
+def _percent(value: float | None) -> str:
+    return "—" if value is None else f"{round(value * 100)}%"
+
+
+@app.command()
+def mastery(
+    subject: Annotated[str, typer.Option("--subject", "-s", help=SUBJECT_HELP)] = "math",
+    by: Annotated[
+        str, typer.Option("--by", help="Как показать: item (номера ЕГЭ), topic или skill.")
+    ] = "item",
+    calibration: Annotated[
+        bool, typer.Option("--calibration", help="Насколько предсказания совпали с фактом.")
+    ] = False,
+) -> None:
+    """Освоение (Mastery v0, экспериментальная модель): по номерам заданий, темам или навыкам."""
+    tutor = _tutor()
+    parsed = _subject(subject)
+    if parsed is None:
+        raise _fail("укажи предмет: --subject math или informatics")
+    if by == "skill":
+        table = _table(title=f"Навыки · {SUBJECT_NAMES[parsed]}")
+        for column in ("Навык", "Освоение", "Уверенность", "Попыток", "Повторить"):
+            table.add_column(column)
+        found = tutor.skill_masteries(parsed)
+        for m in sorted(found, key=lambda m: m.value):
+            table.add_row(
+                f"{m.skill_code} {tutor.skill_title(m.skill_code)}",
+                _percent(m.value),
+                _percent(m.confidence),
+                str(m.attempts),
+                "сейчас" if m.review_due else m.next_review_on.isoformat(),
+            )
+        if not found:
+            console.print("Пока нет решённых задач с навыками.")
+            return
+    elif by in ("item", "topic"):
+        rows = (
+            tutor.mastery_by_exam_item(parsed) if by == "item" else tutor.mastery_by_topic(parsed)
+        )
+        table = _table(title=f"Освоение · {SUBJECT_NAMES[parsed]}")
+        table.add_column("№" if by == "item" else "Тема")
+        table.add_column("Название")
+        table.add_column("Освоение", justify="right")
+        table.add_column("Изучено навыков", justify="right")
+        for a in rows:
+            table.add_row(a.key, a.title, _percent(a.value), f"{a.studied} из {a.total}")
+    else:
+        raise _fail("--by: item, topic или skill")
+    console.print(table)
+    console.print(
+        "[dim]Mastery v0 — стартовая модель: оценки уточнятся, когда накопится история.[/]"
+    )
+    if calibration:
+        c = tutor.calibration()
+        if not c.count:
+            console.print("Калибровка: пока нет завершённых предсказаний.")
+        else:
+            console.print(
+                f"Калибровка по {c.count} попыткам: Brier {c.brier}, log-loss {c.log_loss}, "
+                f"предсказано в среднем {_percent(c.mean_predicted)}, "
+                f"решено самостоятельно {_percent(c.mean_actual)}."
+            )
+
+
+@app.command(name="recalc")
+def recalc() -> None:
+    """Пересчитать mastery и паттерны ошибок по всей истории попыток."""
+    count = _tutor().recalculate_mastery()
+    console.print(f"Пересчитано навыков: {count}. Снимки прошлых дней не изменены.")
+
+
+@app.command()
+def mistakes(
+    skill: Annotated[str | None, typer.Option("--skill", help="Только этот навык.")] = None,
+    limit: Annotated[int, typer.Option("--limit", help="Сколько показать.")] = 20,
+) -> None:
+    """Последние ошибки и частые ошибки (паттерны)."""
+    tutor = _tutor()
+    patterns = tutor.mistake_patterns()
+    if patterns:
+        table = _table(title="Частые ошибки")
+        for column in ("Навык", "Что не так", "Раз", "Приоритет"):
+            table.add_column(column)
+        for p in patterns[:limit]:
+            table.add_row(
+                f"{p.skill_code} {tutor.skill_title(p.skill_code)}",
+                p.category_name,
+                str(p.occurrences),
+                f"{p.priority:.2f}",
+            )
+        console.print(table)
+    found = tutor.mistakes(skill, limit)
+    if not found:
+        console.print("Ошибок пока нет.")
+        return
+    table = _table(title="Последние ошибки")
+    for column in ("№", "Когда (UTC)", "Задача", "Навык", "Что не так", "Кто решил"):
+        table.add_column(column)
+    for m in found:
+        table.add_row(
+            str(m.id),
+            m.created_at.strftime("%Y-%m-%d %H:%M"),
+            str(m.task_id),
+            m.skill_code or "—",
+            m.category_name,
+            {"RULE": "правило", "AI": "ИИ", "USER": "ты"}[m.classified_by.value],
+        )
+    console.print(table)
+
+
+@app.command(name="mistake")
+def mistake_fix(
+    mistake_id: Annotated[int, typer.Argument(help="Номер ошибки из ege mistakes.")],
+    category: Annotated[
+        str,
+        typer.Argument(
+            help="Что пошло не так: "
+            + ", ".join(f"{c.value} ({MISTAKE_CATEGORY_NAMES[c]})" for c in MistakeCategory)
+        ),
+    ],
+) -> None:
+    """Уточнить причину ошибки. Исходная запись сохраняется в истории."""
+    try:
+        parsed = MistakeCategory(category.strip().upper())
+    except ValueError as e:
+        raise _fail(f"неизвестная категория {category}") from e
+    try:
+        fixed = _tutor().reclassify_mistake(mistake_id, parsed)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(
+        f"Ошибка №{mistake_id}: теперь «{fixed.category_name}» (новая запись №{fixed.id})."
+    )
+
+
+@app.command()
+def queue(
+    subject: Annotated[str | None, typer.Option("--subject", "-s", help=SUBJECT_HELP)] = None,
+) -> None:
+    """Очередь повторений: что пора повторить и частые ошибки."""
+    tutor = _tutor()
+    items = tutor.review_queue(_subject(subject))
+    if not items:
+        console.print("Повторять пока нечего.")
+        return
+    table = _table(title="Очередь повторений")
+    for column in ("Навык", "Почему", "Освоение"):
+        table.add_column(column)
+    for i in items:
+        why = REVIEW_REASON_NAMES[i.reason]
+        if i.category is not None:
+            why += f": {MISTAKE_CATEGORY_NAMES[i.category]}"
+        table.add_row(f"{i.skill_code} {i.skill_title}", why, _percent(i.value))
+    console.print(table)
+    console.print("Начать повторение: ege repeat")
+
+
+@app.command()
+def repeat(
+    subject: Annotated[str | None, typer.Option("--subject", "-s", help=SUBJECT_HELP)] = None,
+) -> None:
+    """Повторять по очереди повторений (режим REVIEW)."""
+    tutor = _tutor()
+    parsed = _subject(subject)
+    while True:
+        try:
+            task = tutor.next_review_task(parsed)
+        except AppError as e:
+            console.print(f"[yellow]{e}[/]")
+            return
+        outcome, _ = _solve_one(tutor, task, AttemptMode.REVIEW)
+        if outcome == "exit" or not _ask_yes_no("Повторять дальше?"):
+            return
 
 
 # ── программы на Python (Phase 3) ───────────────────────────────────────────

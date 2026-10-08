@@ -21,6 +21,12 @@ from ege_tutor.core.domain import (
     ExamSpec,
     ImportBatch,
     ImportReport,
+    MasteryAggregate,
+    Mistake,
+    MistakeCategory,
+    MistakePattern,
+    ReviewItem,
+    SkillMastery,
     StudentProfile,
     Subject,
     Task,
@@ -33,11 +39,12 @@ from ege_tutor.core.ports import AIService, Clock, Repository, RepositoryError, 
 from ege_tutor.core.services.catalog import load_catalog
 from ege_tutor.core.services.code import CodeService
 from ege_tutor.core.services.content_import import build_report
+from ege_tutor.core.services.mastery import Calibration, MasteryService
 from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
 from ege_tutor.sandbox import make_sandbox
 from ege_tutor.subjects import tutor_for
 
-CURRENT_PHASE = 3
+CURRENT_PHASE = 4
 DB_FILE_NAME = "ege.db"
 BACKUP_PREFIX = "ege-"
 DEFAULT_BACKUPS_KEPT = 14
@@ -87,6 +94,7 @@ class TutorApp:
         self.practice = PracticeService(
             repository, clock, settings.mastery, tutor_for, self._time_norm
         )
+        self.mastery = MasteryService(repository, clock, settings.mastery, catalog)
         self.code = CodeService(repository, clock, sandbox, settings.app.sandbox, self.asset_path)
 
     @classmethod
@@ -287,16 +295,22 @@ class TutorApp:
         return self.practice.similar_task(task_id)
 
     def start_attempt(self, task_id: int, mode: AttemptMode = AttemptMode.PRACTICE) -> Attempt:
-        return self.practice.start(task_id, mode)
+        attempt = self.practice.start(task_id, mode)
+        self.mastery.on_attempt_started(attempt, self.task(task_id))
+        return attempt
 
     def next_hint(self, attempt_id: int) -> ShownHint:
         return self.practice.next_hint(attempt_id)
 
     def submit_answer(self, attempt_id: int, answer: str) -> AttemptResult:
-        return self.practice.submit(attempt_id, answer)
+        result = self.practice.submit(attempt_id, answer)
+        self.mastery.on_attempt_finished(result.attempt, result.task)
+        return result
 
     def give_up(self, attempt_id: int) -> Attempt:
-        return self.practice.give_up(attempt_id)
+        attempt = self.practice.give_up(attempt_id)
+        self.mastery.on_attempt_finished(attempt, self.task(attempt.task_id))
+        return attempt
 
     def abandon_attempt(self, attempt_id: int) -> Attempt:
         return self.practice.abandon(attempt_id)
@@ -344,3 +358,55 @@ class TutorApp:
         if run is None:
             raise AppError(f"запуск №{run_id} не найден")
         return run
+
+    # ── mastery, ошибки, повторения (Phase 4) ───────────────────────────────
+
+    def skill_masteries(self, subject: Subject | None = None) -> list[SkillMastery]:
+        return self.mastery.skill_masteries(subject)
+
+    def mastery_by_topic(self, subject: Subject) -> list[MasteryAggregate]:
+        return self.mastery.by_topic(subject)
+
+    def mastery_by_exam_item(self, subject: Subject) -> list[MasteryAggregate]:
+        return self.mastery.by_exam_item(subject)
+
+    def recalculate_mastery(self) -> int:
+        """Пересчитать mastery и паттерны ошибок по всей истории попыток."""
+        return self.mastery.recalculate_all()
+
+    def calibration(self) -> Calibration:
+        return self.mastery.calibration()
+
+    def mistakes(self, skill_code: str | None = None, limit: int = 50) -> list[Mistake]:
+        return self.mastery.mistakes(skill_code, limit)
+
+    def attempt_mistakes(self, attempt_id: int) -> list[Mistake]:
+        return self.mastery.attempt_mistakes(attempt_id)
+
+    def reclassify_mistake(self, mistake_id: int, category: MistakeCategory) -> Mistake:
+        return self.mastery.reclassify(mistake_id, category)
+
+    def mistake_patterns(self, open_only: bool = True) -> list[MistakePattern]:
+        return self.mastery.patterns(open_only)
+
+    def review_queue(self, subject: Subject | None = None) -> list[ReviewItem]:
+        return self.mastery.review_queue(subject)
+
+    def skill_title(self, skill_code: str) -> str:
+        info = self.mastery.skills.get(skill_code)
+        return info.title if info else skill_code
+
+    def next_review_task(self, subject: Subject | None = None) -> Task:
+        """Задача для повторения: на первый навык очереди, у которого есть проверенные задачи."""
+        queue = self.review_queue(subject)
+        if not queue:
+            raise AppError("повторять пока нечего: очередь повторений пуста")
+        for item in queue:
+            task = self.practice.task_for_skill(item.skill_code)
+            if task is not None:
+                return task
+        raise AppError("для навыков из очереди нет проверенных задач: добавь задачи и проверь их")
+
+    def start_review(self, subject: Subject | None = None) -> Attempt:
+        """Начать повторение (режим REVIEW) по очереди повторений."""
+        return self.start_attempt(self.next_review_task(subject).id, AttemptMode.REVIEW)

@@ -1,6 +1,6 @@
 [project]
 name = "ege-tutor"
-version = "0.4.0"
+version = "0.5.0"
 description = "EGE-TUTOR-2027: персональная система подготовки к ЕГЭ по профильной математике и информатике"
 readme = "README.md"
 requires-python = ">=3.13"

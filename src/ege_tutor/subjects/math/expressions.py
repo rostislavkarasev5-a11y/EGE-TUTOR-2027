@@ -48,7 +48,7 @@ def numeric_value(text: str) -> Fraction | None:
         return None
     try:
         expr = sympy.nsimplify(parse_expr(prepared, transformations=_TRANSFORMS))
-    except (SyntaxError, TypeError, ValueError, ZeroDivisionError, AttributeError):
+    except (SyntaxError, TypeError, ValueError, ZeroDivisionError, AttributeError, IndexError):
         return None
     if not expr.is_number or not expr.is_rational:
         return None

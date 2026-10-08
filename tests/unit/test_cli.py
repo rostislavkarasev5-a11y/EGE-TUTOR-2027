@@ -260,3 +260,36 @@ def test_run_program_through_runner(tmp_path, monkeypatch):
     assert history.exit_code == 0
     assert "2 из 2" in history.output
     assert invoke("run", str(math_task.id), str(program)).exit_code == 1
+
+
+def test_mastery_mistakes_queue_and_repeat():
+    """Phase 4: освоение, ошибки, уточнение причины, очередь и повторение."""
+    _import_and_review_all()
+    assert "Пока нет решённых задач" in invoke("mastery", "--by", "skill").output
+    wrong = runner.invoke(app, ["solve", "1"], input="-6\nнет\n")
+    assert wrong.exit_code == 0, wrong.output
+    assert "Ошибка записана: невнимательность" in wrong.output
+
+    by_item = invoke("mastery", "-s", "math")
+    assert by_item.exit_code == 0, by_item.output
+    assert "Освоение" in by_item.output and "Mastery v0" in by_item.output
+    assert "M06" in invoke("mastery", "--by", "skill").output
+    assert invoke("mastery", "--by", "topic").exit_code == 0
+    assert "Brier" in invoke("mastery", "--calibration").output
+    assert invoke("mastery", "--by", "nonsense").exit_code == 1
+
+    history = invoke("mistakes")
+    assert "Частые ошибки" in history.output and "невнимательность" in history.output
+    fixed = invoke("mistake", "1", "condition")
+    assert fixed.exit_code == 0, fixed.output
+    assert "непонимание условия" in fixed.output
+    assert invoke("mistake", "1", "formula").exit_code == 1  # уже уточнена
+    assert invoke("mistake", "2", "nonsense").exit_code == 1
+
+    queue = invoke("queue")
+    assert "Очередь повторений" in queue.output
+    repeat = runner.invoke(app, ["repeat"], input="6\nнет\n")
+    assert repeat.exit_code == 0, repeat.output
+    assert "верно" in repeat.output
+    assert "REVIEW" not in repeat.output  # режим не показывается как код
+    assert "Пересчитано навыков" in invoke("recalc").output

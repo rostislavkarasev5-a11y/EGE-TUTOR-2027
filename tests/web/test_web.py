@@ -514,3 +514,52 @@ def test_program_box_explains_missing_sandbox(site_with):
     page = client.get(f"/attempts/{_start(client, task.id)}")
     assert "Песочница для программ не настроена" in page.text
     assert "Запустить программу" not in page.text
+
+
+# ── прогресс, ошибки, повторение (Phase 4) ──────────────────────────────────
+
+
+def test_progress_mistakes_and_repeat(client, tutor):
+    _import_sample(client)
+    _review_all(client)
+    page = client.get("/progress")
+    assert "Пока нет решённых задач" in page.text
+    assert "Повторять пока нечего" in client.get("/").text
+
+    task = next(t for t in tutor.tasks() if t.exam_item == 6 and t.subject.value == "MATH_PROFILE")
+    attempt_id = _start(client, task.id)
+    wrong = post(client, f"/attempts/{attempt_id}/answer", {"answer": "-6"})
+    assert "Ошибка записана" in wrong.text and "невнимательность" in wrong.text
+
+    progress = client.get("/progress?subject=MATH_PROFILE")
+    assert "<progress" in progress.text and "M06.algebraic" in progress.text
+    assert 'style="' not in progress.text  # CSP запрещает inline-стили
+    assert client.get("/progress?subject=INFORMATICS").status_code == 200
+
+    mistakes = client.get("/mistakes")
+    assert "Частые ошибки" in mistakes.text and "невнимательность" in mistakes.text
+    mistake_id = re.search(r'action="/mistakes/(\d+)"', mistakes.text).group(1)
+    fixed = post(
+        client,
+        f"/mistakes/{mistake_id}",
+        {"category": "CONDITION", "back": f"/attempts/{attempt_id}"},
+    )
+    assert str(fixed.url).endswith(f"/attempts/{attempt_id}")
+    assert "Причина ошибки уточнена: непонимание условия" in fixed.text
+    again = post(
+        client, f"/mistakes/{mistake_id}", {"category": "FORMULA", "back": "//evil.example"}
+    )
+    assert "уже уточнена" in again.text
+    assert str(again.url) == "https://testserver/"
+    assert "неизвестная причина" in post(client, f"/mistakes/{mistake_id}", {"category": "X"}).text
+
+    home = client.get("/")
+    assert "В очереди повторений" in home.text
+    repeat = post(client, "/repeat")
+    assert "/attempts/" in str(repeat.url)
+    assert "Проверить" in repeat.text
+
+
+def test_repeat_with_empty_queue(client):
+    response = post(client, "/repeat")
+    assert "очередь повторений пуста" in response.text

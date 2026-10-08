@@ -23,11 +23,14 @@ from ege_tutor import __version__
 from ege_tutor.core.app import AppError, TutorApp
 from ege_tutor.core.domain import (
     CODE_VERDICT_LABELS,
+    MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
     AnswerType,
     AttemptStatus,
     CodeVerdict,
     ImportBatchStatus,
+    MistakeCategory,
+    ReviewReason,
     Subject,
     Task,
     TaskSource,
@@ -61,6 +64,10 @@ ATTEMPT_STATUS_NAMES = {
     AttemptStatus.ANSWERED: "ответ дан",
     AttemptStatus.GAVE_UP: "сдался",
     AttemptStatus.ABANDONED: "брошена",
+}
+REVIEW_REASON_NAMES = {
+    ReviewReason.FORGETTING: "пора повторить",
+    ReviewReason.MISTAKES: "частая ошибка",
 }
 HINT_NAMES = {
     1: "небольшая подсказка",
@@ -199,6 +206,10 @@ def create_app(
         AttemptStatus=AttemptStatus,
         CODE_VERDICT_LABELS=CODE_VERDICT_LABELS,
         CodeVerdict=CodeVerdict,
+        MistakeCategory=MistakeCategory,
+        MISTAKE_CATEGORY_NAMES=MISTAKE_CATEGORY_NAMES,
+        REVIEW_REASON_NAMES=REVIEW_REASON_NAMES,
+        skill_title=tutor.skill_title,
         time_limit=f"{tutor.settings.app.sandbox.time_limit_seconds:g}",
         memory_limit=tutor.settings.app.sandbox.memory_limit_mb,
         version=__version__,
@@ -349,7 +360,67 @@ def create_app(
             info=core.info(),
             profile=core.profile(),
             has_unverified=core.next_unverified_task() is not None,
+            queue=core.review_queue(),
         )
+
+    # ── прогресс, ошибки, повторение (Phase 4) ──
+
+    @app.get("/progress", response_class=HTMLResponse)
+    def progress_page(request: Request, subject: str | None = None):
+        require_login(request)
+        chosen = _parse_subject(subject) or Subject.MATH_PROFILE
+        items = core.mastery_by_exam_item(chosen)
+        skills = sorted(core.skill_masteries(chosen), key=lambda m: (m.value, m.skill_code))
+        return render(
+            request,
+            "progress.html",
+            subject=chosen,
+            items=items,
+            any_studied=any(a.value is not None for a in items),
+            skills=skills,
+            calibration=core.calibration(),
+        )
+
+    @app.get("/mistakes", response_class=HTMLResponse)
+    def mistakes_page(request: Request):
+        require_login(request)
+        return render(
+            request,
+            "mistakes.html",
+            patterns=core.mistake_patterns(),
+            mistakes=core.mistakes(limit=50),
+        )
+
+    @app.post("/mistakes/{mistake_id}")
+    async def reclassify_mistake(
+        request: Request,
+        mistake_id: int,
+        category: Annotated[str, Form()] = "",
+        back: Annotated[str, Form()] = "/mistakes",
+    ):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            fixed = core.reclassify_mistake(mistake_id, MistakeCategory(category))
+        except ValueError:
+            flash(request, "неизвестная причина ошибки", "error")
+            return redirect(_safe_next(back))
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(_safe_next(back))
+        flash(request, f"Причина ошибки уточнена: {fixed.category_name}.", "success")
+        return redirect(_safe_next(back))
+
+    @app.post("/repeat")
+    async def repeat(request: Request):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            attempt = core.start_review()
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/")
+        return redirect(f"/attempts/{attempt.id}")
 
     # ── задачи ──
 
@@ -461,6 +532,7 @@ def create_app(
             sandbox_ready=code_enabled and core.sandbox.is_available,
             runs=runs,
             last_code=runs[0].code if runs else "",
+            mistakes=core.attempt_mistakes(attempt_id),
             attempt=attempt,
             task=task,
             hints=hints,

@@ -12,7 +12,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from ege_tutor.core.domain import Subject, VerificationStatus
+from ege_tutor.core.domain import MistakeCategory, Subject, VerificationStatus
 
 CONFIG_DIR_ENV = "EGE_TUTOR_CONFIG_DIR"
 DATA_DIR_ENV = "EGE_TUTOR_DATA_DIR"
@@ -128,9 +128,41 @@ class ModeWeights(_Strict):
     exam: PositiveWeight
 
 
+class EvidenceConfig(_Strict):
+    recency_decay: Annotated[float, Field(gt=0.0, le=1.0)]
+    confidence_scale: PositiveWeight
+
+
 class ForgettingConfig(_Strict):
     initial_stability_days: PositiveWeight
-    review_threshold: Factor
+    review_threshold: Annotated[float, Field(gt=0.0, lt=1.0)]
+    success_threshold: Factor
+    min_review_gap_days: Annotated[float, Field(ge=0.0)]
+    stability_growth: Annotated[float, Field(ge=1.0)]
+    max_stability_days: PositiveWeight
+    failure_threshold: Factor
+    stability_after_failure: Factor
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Self:
+        if self.failure_threshold > self.success_threshold:
+            raise ValueError("failure_threshold не может быть больше success_threshold")
+        if self.max_stability_days < self.initial_stability_days:
+            raise ValueError("max_stability_days меньше initial_stability_days")
+        return self
+
+
+class MistakesConfig(_Strict):
+    freshness_days: PositiveWeight
+    close_after_independent: Annotated[int, Field(ge=1)]
+    category_base: dict[MistakeCategory, PositiveWeight]
+
+    @model_validator(mode="after")
+    def _all_categories(self) -> Self:
+        missing = set(MistakeCategory) - set(self.category_base)
+        if missing:
+            raise ValueError(f"нет базового приоритета для: {', '.join(sorted(missing))}")
+        return self
 
 
 class AttemptsConfig(_Strict):
@@ -150,8 +182,10 @@ class MasteryConfig(_Strict):
     repeat_factor: RepeatFactors
     difficulty_weight: DifficultyWeights
     mode_weight: ModeWeights
+    evidence: EvidenceConfig
     forgetting: ForgettingConfig
     attempts: AttemptsConfig
+    mistakes: MistakesConfig
 
 
 # ── diagnostics.toml ────────────────────────────────────────────────────────
