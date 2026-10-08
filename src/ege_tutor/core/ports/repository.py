@@ -4,6 +4,12 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from ege_tutor.core.domain import (
+    AICall,
+    AICallStatus,
+    AICriterionScore,
+    AINote,
+    AIPurpose,
+    AIUsage,
     Attempt,
     AttemptMode,
     AttemptStatus,
@@ -23,6 +29,8 @@ from ege_tutor.core.domain import (
     MistakeCategory,
     MistakeDraft,
     MistakePattern,
+    Part2Grade,
+    Part2GradeStatus,
     Prediction,
     StopReason,
     StudentProfile,
@@ -288,3 +296,75 @@ class Repository(Protocol):
     ) -> DiagnosticSession: ...
 
     def diagnostic_results(self, session_id: int) -> list[DiagnosticItemResult]: ...
+
+    # ── ИИ (Phase 6) ──
+
+    def add_ai_call(
+        self,
+        *,
+        purpose: AIPurpose,
+        status: AICallStatus,
+        model: str,
+        usage: AIUsage | None,
+        cost_rub: float,
+        at: dt.datetime,
+        error: str | None = None,
+        attempt_id: int | None = None,
+        task_id: int | None = None,
+    ) -> AICall:
+        """Записать обращение к ИИ (и неудачное тоже: оно могло стоить денег)."""
+        ...
+
+    def ai_usage_since(self, since: dt.datetime) -> tuple[float, int]:
+        """Потрачено рублей и число обращений к ИИ начиная с момента since."""
+        ...
+
+    def list_ai_calls(self, limit: int = 50) -> list[AICall]:
+        """Обращения к ИИ, новые первыми."""
+        ...
+
+    def add_ai_note(
+        self,
+        *,
+        ai_call_id: int,
+        purpose: AIPurpose,
+        text: str,
+        at: dt.datetime,
+        attempt_id: int | None = None,
+        task_id: int | None = None,
+        mistake_id: int | None = None,
+        hint_level: int | None = None,
+        category: MistakeCategory | None = None,
+        confidence: float | None = None,
+    ) -> AINote: ...
+
+    def list_ai_notes(
+        self,
+        *,
+        attempt_id: int | None = None,
+        mistake_id: int | None = None,
+        purpose: AIPurpose | None = None,
+    ) -> list[AINote]:
+        """Принятые ответы ИИ по порядку записи."""
+        ...
+
+    def add_part2_grade(
+        self,
+        *,
+        task_id: int,
+        solution_text: str,
+        points: int,
+        max_points: int,
+        criteria: Sequence[AICriterionScore],
+        summary: str,
+        status: Part2GradeStatus,
+        at: dt.datetime,
+        ai_call_id: int | None = None,
+        attempt_id: int | None = None,
+    ) -> Part2Grade: ...
+
+    def list_part2_grades(self, task_id: int | None = None, limit: int = 50) -> list[Part2Grade]:
+        """Оценки решений части 2, новые первыми."""
+        ...
+
+    def get_part2_grade(self, grade_id: int) -> Part2Grade | None: ...

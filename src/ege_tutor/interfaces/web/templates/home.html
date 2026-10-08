@@ -59,7 +59,7 @@
   <ul class="plain">
     <li>Задач в базе: {{ info.task_count }}</li>
     <li>Песочница для программ: {{ "готова" if info.sandbox_available else "не настроена" }}</li>
-    <li>ИИ (Phase 6): {{ "подключён" if info.ai_available else "не подключён" }}</li>
+    <li><a href="/ai">ИИ</a>: {{ "подключён" if info.ai_available else "не подключён" }}</li>
   </ul>
   <form method="post" action="/backup">
     {{ csrf_field() }}

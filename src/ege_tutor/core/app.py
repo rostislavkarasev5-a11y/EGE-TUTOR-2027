@@ -10,10 +10,13 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ege_tutor import __version__
-from ege_tutor.ai import DisabledAIService
+from ege_tutor.ai import make_ai
 from ege_tutor.config import Settings, load_settings
 from ege_tutor.core.clock import SystemClock
 from ege_tutor.core.domain import (
+    AICall,
+    AINote,
+    AIStatus,
     Attempt,
     AttemptMode,
     Catalog,
@@ -29,6 +32,7 @@ from ege_tutor.core.domain import (
     Mistake,
     MistakeCategory,
     MistakePattern,
+    Part2Grade,
     ReviewItem,
     SkillMastery,
     StopReason,
@@ -41,6 +45,7 @@ from ege_tutor.core.domain import (
 )
 from ege_tutor.core.errors import AppError
 from ege_tutor.core.ports import AIService, Clock, Repository, RepositoryError, Sandbox
+from ege_tutor.core.services.assistant import AIHint, AssistantService, GeneratedTask
 from ege_tutor.core.services.catalog import load_catalog
 from ege_tutor.core.services.code import CodeService
 from ege_tutor.core.services.content_import import build_report
@@ -50,7 +55,7 @@ from ege_tutor.core.services.practice import AttemptResult, PracticeService, Sho
 from ege_tutor.sandbox import make_sandbox
 from ege_tutor.subjects import tutor_for
 
-CURRENT_PHASE = 5
+CURRENT_PHASE = 6
 DB_FILE_NAME = "ege.db"
 BACKUP_PREFIX = "ege-"
 DEFAULT_BACKUPS_KEPT = 14
@@ -114,6 +119,19 @@ class TutorApp:
         self.mastery = MasteryService(repository, clock, settings.mastery, catalog)
         self.code = CodeService(repository, clock, sandbox, settings.app.sandbox, self.asset_path)
         self.diagnostics = DiagnosticsService(repository, clock, settings.diagnostics, catalog)
+        # ИИ передаётся только помощнику; диагностика (и будущий Exam Mode) его не получают.
+        self.assistant = AssistantService(
+            repository,
+            clock,
+            ai,
+            settings.app.ai,
+            catalog,
+            tutor_for,
+            sandbox,
+            settings.app.sandbox,
+            settings.mastery.independence.for_hint_level,
+            self.asset_root,
+        )
 
     @classmethod
     def create(
@@ -122,6 +140,7 @@ class TutorApp:
         clock: Clock | None = None,
         repository: Repository | None = None,
         sandbox: Sandbox | None = None,
+        ai: AIService | None = None,
     ) -> "TutorApp":
         """Собрать приложение с реализациями по умолчанию для текущей фазы.
 
@@ -138,7 +157,7 @@ class TutorApp:
         return cls(
             settings=settings,
             clock=clock or SystemClock(),
-            ai=DisabledAIService(),
+            ai=ai or make_ai(settings.app.ai),
             sandbox=sandbox or make_sandbox(settings.app.sandbox),
             repository=repository,
             catalog=catalog,
@@ -190,7 +209,7 @@ class TutorApp:
             phase=CURRENT_PHASE,
             exams=tuple(self.exam_countdown(s) for s in Subject),
             storage_ready=self.repository.is_ready(),
-            ai_available=self.ai.is_available,
+            ai_available=self.assistant.status().available,
             sandbox_available=self.sandbox.is_available,
             task_count=self.repository.count_tasks(),
         )
@@ -341,7 +360,7 @@ class TutorApp:
         return attempt
 
     def shown_hints(self, attempt_id: int) -> list[ShownHint]:
-        return self.practice.shown_hints(attempt_id)
+        return self.practice.shown_hints(attempt_id, self.assistant.hint_texts(attempt_id))
 
     def attempts(self, task_id: int | None = None, limit: int = 50) -> list[Attempt]:
         return self.repository.list_attempts(task_id, limit)
@@ -495,3 +514,53 @@ class TutorApp:
 
     def diagnostic_session_of_attempt(self, attempt_id: int) -> int | None:
         return self.diagnostics.session_of_attempt(attempt_id)
+
+    # ── ИИ-помощник (Phase 6, ADR-0017) ─────────────────────────────────────
+
+    def ai_status(self) -> AIStatus:
+        return self.assistant.status()
+
+    def ai_calls(self, limit: int = 50) -> list[AICall]:
+        return self.repository.list_ai_calls(limit)
+
+    def ai_hint_level(self, attempt_id: int) -> int | None:
+        """Какой уровень подсказки может сейчас дать ИИ (None — никакой)."""
+        attempt = self.attempt(attempt_id)
+        if not self.assistant.status().available:
+            return None
+        return self.assistant.ai_hint_level(attempt, self.task(attempt.task_id))
+
+    def ai_hint(self, attempt_id: int) -> AIHint:
+        previous = [h.text for h in self.shown_hints(attempt_id) if h.text]
+        return self.assistant.hint(attempt_id, previous)
+
+    def ai_explain(self, attempt_id: int) -> AINote:
+        return self.assistant.explain(attempt_id)
+
+    def ai_explanation(self, attempt_id: int) -> AINote | None:
+        return self.assistant.explanation(attempt_id)
+
+    def ai_allowed_for(self, attempt_id: int) -> bool:
+        """Можно ли в этой попытке пользоваться ИИ (не диагностика, не экзамен)."""
+        return self.assistant.can_use_in(self.attempt(attempt_id))
+
+    def ai_classify_mistake(self, mistake_id: int) -> AINote:
+        return self.assistant.classify_mistake(mistake_id)
+
+    def ai_mistake_note(self, mistake_id: int) -> AINote | None:
+        return self.assistant.mistake_note(mistake_id)
+
+    def ai_grade_part2(self, task_id: int, solution_text: str) -> Part2Grade:
+        return self.assistant.grade_part2(task_id, solution_text)
+
+    def part2_grades(self, task_id: int | None = None) -> list[Part2Grade]:
+        return self.assistant.part2_grades(task_id)
+
+    def part2_grade(self, grade_id: int) -> Part2Grade:
+        return self.assistant.part2_grade(grade_id)
+
+    def ai_generate_similar(self, task_id: int) -> GeneratedTask:
+        return self.assistant.generate_similar(task_id)
+
+    def why_cannot_generate(self, task: Task) -> str | None:
+        return self.assistant.why_cannot_generate(task)

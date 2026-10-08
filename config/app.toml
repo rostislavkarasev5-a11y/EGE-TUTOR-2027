@@ -18,8 +18,25 @@ status = "TBD"
 status = "TBD"
 
 [ai]
-# AI Layer появится в Phase 6. До этого ИИ выключен, приложение работает без Claude API.
-enabled = false
+# ИИ-слой (Phase 6, ADR-0017): Yandex AI Studio. Без ИИ приложение работает полностью.
+# Ключи сюда НЕ пишутся: только в переменные окружения на сервере
+# (EGE_YANDEX_API_KEY, EGE_YANDEX_FOLDER_ID) — их записывает deploy/set-ai-key.sh.
+# provider, model и monthly_budget_rub можно переопределить переменными
+# EGE_AI_PROVIDER, EGE_AI_MODEL, EGE_AI_MONTHLY_BUDGET_RUB.
+provider = "disabled"            # "disabled" или "yandex"
+# Имя модели в каталоге (без gpt://каталог/). Другие варианты: "yandexgpt-lite/latest",
+# "qwen3-235b-a22b-fp8/latest" — смотри список моделей в AI Studio.
+model = "yandexgpt/latest"
+base_url = "https://ai.api.cloud.yandex.net/v1"
+# Лимит трат в месяц, рубли. Дошли до лимита — ИИ выключается до 1-го числа.
+monthly_budget_rub = 300
+# Цены за 1000 токенов, рубли с НДС. Перенеси с сайта Yandex Cloud (раздел «Тарифы AI Studio»).
+# По умолчанию — с запасом выше реальных цен, чтобы расход не оказался больше лимита.
+price_input_per_1000_rub = 1.2
+price_output_per_1000_rub = 1.2
+max_output_tokens = 1500
+timeout_seconds = 60
+temperature = 0.3
 
 [sandbox]
 # Python Sandbox появится в Phase 3 (ADR-0008).

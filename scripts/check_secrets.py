@@ -39,6 +39,10 @@ SECRET_PATTERNS = {
     "GitHub token": re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{36}\b"),
     "GitHub fine-grained token": re.compile(r"\bgithub_pat_[A-Za-z0-9_]{60,}"),
     "AWS access key": re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    # Yandex Cloud (ADR-0017): API-ключ, IAM-токен, секрет статического ключа.
+    "Yandex Cloud API key": re.compile(r"\bAQVN[A-Za-z0-9_\-]{30,}"),
+    "Yandex Cloud IAM token": re.compile(r"\bt1\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{40,}"),
+    "Yandex Cloud static key secret": re.compile(r"\bYC[A-Za-z0-9_\-]{38}\b"),
     "Private key": re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
     "Filled API key variable": re.compile(
         r"^\s*[A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD)\s*=\s*['\"]?[^\s'\"#]{8,}", re.MULTILINE

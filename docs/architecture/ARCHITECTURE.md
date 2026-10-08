@@ -33,7 +33,7 @@
 | Модели данных | **Pydantic v2** | Проверка данных на входе (задачи из YAML, ответы ИИ). |
 | CLI | **Typer** + **Rich** | Typer — команды, Rich — красивые таблицы, цвета, панель «До ЕГЭ: X дней». |
 | Математика | **SymPy** (вспомогательный) | Сравнение ответов и выражений: `2√3`, `-0,5`, `1/3`, равносильность простых выражений; проверка ответа AI-задачи. **Не** проверяет развёрнутые решения части 2 (см. 5.6a). |
-| ИИ | официальный SDK **anthropic** (только с Phase 6) | Структурированные ответы (JSON по схеме), кэширование промптов. |
+| ИИ | **Yandex AI Studio** через `urllib`, без SDK (Phase 6, ADR-0017) | Ответы — JSON, проверяются Pydantic; адаптер Claude можно добавить за тем же портом. |
 | Sandbox | свой модуль: Linux-изоляция или **Docker** | Подробно в разделе 9. |
 | Тесты | **pytest**, **hypothesis** (для формул mastery), **ruff** (стиль) | Стандарт в Python. |
 | CI | **GitHub Actions** | Тесты запускаются автоматически на каждый PR. |
@@ -351,7 +351,7 @@ EGE-TUTOR-2027/
 │   │   ├── math/              MATH TUTOR: проверка ответов, критерии части 2
 │   │   └── informatics/       INFORMATICS TUTOR: задачи с кодом, тест-кейсы
 │   ├── db/                    (Phase 1) SQLAlchemy-модели, репозитории, миграции Alembic
-│   ├── ai/                    DisabledAIService; (Phase 6) клиент Claude, промпты, схемы
+│   ├── ai/                    DisabledAIService, YandexAIService (Phase 6), промпты
 │   ├── sandbox/               движок Linux-native, ege-runner, клиенты: сокет runner, Docker; WSL2 — позже
 │   └── interfaces/
 │       ├── cli/               команды Typer
@@ -452,7 +452,9 @@ CORE ──(вызов порта AIService)──► AIService
 - В Exam Mode порт ИИ физически не вызывается (проверяется тестом).
 - Ключ API хранится в `.env` на компьютере пользователя и никогда не попадает в Git.
 
-**Ключ API** нужен только с Phase 6: аккаунт Anthropic Console, отдельный от подписки claude.ai, с лимитом расходов.
+**Ключ API** нужен только с Phase 6. Первая реализация — Yandex AI Studio (ADR-0017): сервисный аккаунт и API-ключ в Yandex Cloud, ключ — только в переменных окружения сервера.
+
+**Как сделано в Phase 6 (ADR-0017):** порт — `core/ports/ai.py` (`hint`, `explain`, `classify_mistake`, `grade_part2`, `generate_similar`; каждый возвращает предложение и расход токенов). Реализации — `ai/yandex.py` (`YandexAIService`: OpenAI-совместимый Chat Completions через `urllib`, ответ — JSON, проверяется Pydantic) и `ai/disabled.py`; выбор — `ai.make_ai` по `[ai]` в `config/app.toml` и переменным `EGE_AI_PROVIDER`, `EGE_YANDEX_API_KEY`, `EGE_YANDEX_FOLDER_ID`. Промпты — `ai/prompts/*.md` (версия `prompts-v1`). Все правила — в `core/services/assistant.py` (`AssistantService`): режимы без ИИ (`DIAGNOSTIC`, `CONTROL`, `MOCK`, `EXAM`), ИИ-подсказка только там, где нет записанной, и только если не называет ответ; объяснение — после попытки; категория ошибки — только предложение (принимает пользователь); баллы части 2 обрезаются по критериям и максимуму задания и хранятся как `AI_PRELIMINARY`; похожая задача сохраняется как `AI_GENERATED` отдельным импортом (можно отменить), со статусом `AUTO_CHECKED` только если ответ сошёлся с выражением (SymPy) или программой ИИ в песочнице, иначе отклоняется (без песочницы — `UNVERIFIED`). Таблицы `ai_call` (учёт трат), `ai_note`, `part2_grade` (миграция 0006). Месячный лимит считается по `ai_call` с 1-го числа (UTC). Диагностика порт ИИ не получает вообще. Не сделано: `review_plan` (нет планировщика до Phase 7), объяснение теории (теория — Phase 8), кэширование промптов.
 
 ---
 

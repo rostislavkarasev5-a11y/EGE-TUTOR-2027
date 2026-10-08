@@ -77,6 +77,10 @@ def test_checker_allows_normal_paths(path):
         "AKIA" + "ABCDEFGHIJKLMNOP",
         "-----BEGIN " + "RSA PRIVATE KEY-----",
         "ANTHROPIC_API_KEY=" + "realvalue123456",
+        "AQVN" + "a1B2c3D4" * 5,
+        "t1." + "9euelZqZ" * 2 + "." + "Ab3_" * 22,
+        "YC" + "abcdEFGH12" * 3 + "ab-_cd12",
+        "EGE_YANDEX_API_KEY=" + "realvalue123456",
     ],
 )
 def test_checker_flags_secret_content(text):
@@ -84,7 +88,13 @@ def test_checker_flags_secret_content(text):
 
 
 @pytest.mark.parametrize(
-    "text", ["ANTHROPIC_API_KEY=", "ANTHROPIC_API_KEY=  # пусто", "обычный текст про sk-ant"]
+    "text",
+    [
+        "ANTHROPIC_API_KEY=",
+        "ANTHROPIC_API_KEY=  # пусто",
+        "обычный текст про sk-ant",
+        "EGE_YANDEX_API_KEY=",
+    ],
 )
 def test_checker_allows_placeholders(text):
     assert check_secrets.content_problems(text) == []

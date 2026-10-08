@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import statement, answer_block, csrf_field, reclassify_form with context %}
+{% from "macros.html" import statement, answer_block, csrf_field, reclassify_form, ai_label with context %}
 {% macro code_block() %}
 <div id="code" class="code-box">
   <h3>Программа на Python</h3>
@@ -41,6 +41,26 @@
   {% if mistakes[0].classified_by.value != "USER" %}
   <p class="meta">Если причина другая, выбери её:</p>
   {{ reclassify_form(mistakes[0]) }}
+  {% if ai_mistake %}
+  <div class="ai-box">
+    <p>{{ ai_label() }} ИИ считает, что причина — <strong>{{ MISTAKE_CATEGORY_NAMES[ai_mistake.category] }}</strong>
+      <span class="meta">(уверенность {{ (ai_mistake.confidence * 100)|round|int }}%)</span>: {{ ai_mistake.text }}</p>
+    {% if ai_mistake.category != mistakes[0].category %}
+    <form method="post" action="/mistakes/{{ mistakes[0].id }}" class="row compact">
+      {{ csrf_field() }}
+      <input type="hidden" name="back" value="{{ request.url.path }}">
+      <input type="hidden" name="category" value="{{ ai_mistake.category.value }}">
+      <button type="submit" class="secondary">Согласен с ИИ</button>
+    </form>
+    {% endif %}
+  </div>
+  {% elif ai_allowed and ai.available %}
+  <form method="post" action="/mistakes/{{ mistakes[0].id }}/ai" class="row compact">
+    {{ csrf_field() }}
+    <input type="hidden" name="back" value="{{ request.url.path }}">
+    <button type="submit" class="secondary">Спросить ИИ о причине</button>
+  </form>
+  {% endif %}
   {% endif %}
 </div>
 {% endif %}
@@ -65,8 +85,8 @@
   {% if hints %}
   <div id="hints">
     {% for h in hints %}
-    <div class="hint">
-      <h3>Уровень {{ h.level }}: {{ HINT_NAMES[h.level] }}</h3>
+    <div class="hint{% if h.by_ai %} ai{% endif %}">
+      <h3>Уровень {{ h.level }}: {{ HINT_NAMES[h.level] }}{% if h.by_ai %} {{ ai_label() }}{% endif %}</h3>
       <div class="statement">{{ h.text }}</div>
     </div>
     {% endfor %}
@@ -95,6 +115,9 @@
   {% else %}
   <div class="row actions">
     <form method="post" action="/attempts/{{ attempt.id }}/hint">{{ csrf_field() }}<button class="secondary" type="submit">Подсказка</button></form>
+    {% if ai_hint_level %}
+    <form method="post" action="/attempts/{{ attempt.id }}/ai-hint">{{ csrf_field() }}<button class="secondary" type="submit">Подсказка ИИ (уровень {{ ai_hint_level }})</button></form>
+    {% endif %}
     <form method="post" action="/attempts/{{ attempt.id }}/give-up">{{ csrf_field() }}<button class="secondary" type="submit">Сдаюсь</button></form>
     <form method="post" action="/attempts/{{ attempt.id }}/similar">{{ csrf_field() }}<button class="secondary" type="submit">Похожая задача</button></form>
     <form method="post" action="/attempts/{{ attempt.id }}/abandon">{{ csrf_field() }}<button class="link" type="submit">Выйти</button></form>
@@ -132,6 +155,16 @@
     </div>
     {% if not reveal %}
     <p><a href="/attempts/{{ attempt.id }}?reveal=1">Показать ответ и решение</a></p>
+    {% endif %}
+    {% if ai_explanation %}
+    <div id="ai" class="ai-box">
+      <h3>Объяснение {{ ai_label() }}</h3>
+      <div class="statement">{{ ai_explanation.text }}</div>
+      <p class="meta">ИИ может ошибаться: верный ответ — тот, что записан у задачи.</p>
+    </div>
+    {% elif ai_allowed and ai.available and attempt.status != AttemptStatus.ABANDONED %}
+    <form id="ai" method="post" action="/attempts/{{ attempt.id }}/explain">{{ csrf_field() }}
+      <button class="secondary" type="submit">Объяснить решение (ИИ)</button></form>
     {% endif %}
   {% endif %}
 </section>

@@ -3,8 +3,19 @@
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from pathlib import Path
 
+from ege_tutor.core.domain import (
+    AICriterionScore,
+    AIError,
+    AIMistakeSuggestion,
+    AIPart2Suggestion,
+    AITaskContext,
+    AITaskSuggestion,
+    AIText,
+    AIUsage,
+)
 from ege_tutor.core.ports.sandbox import RunRequest, RunResult, SandboxVerdict
 
 
@@ -60,3 +71,72 @@ class ScriptedSandbox:
     def run(self, request: RunRequest) -> RunResult:
         self.requests.append(request)
         return self.results.pop(0)
+
+
+def usage(input_tokens: int = 1000, output_tokens: int = 500) -> AIUsage:
+    return AIUsage("fake-model", input_tokens, output_tokens, "hash")
+
+
+class FakeAIService:
+    """ИИ для тестов: без интернета и без денег. Ответы задаёт тест, вызовы записываются."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, AITaskContext]] = []
+        self.hint_text = "Подумай, какая формула связывает данные величины."
+        self.explanation = "Сначала найдём ..., затем ..."
+        self.category = "ARITHMETIC"
+        self.criteria: tuple[AICriterionScore, ...] = (
+            AICriterionScore("Обоснованно получен верный ответ", 2, 2, "всё верно"),
+        )
+        self.generated: AITaskSuggestion | None = None
+        self.error: AIError | None = None
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    @property
+    def unavailable_reason(self) -> str | None:
+        return None
+
+    @property
+    def provider(self) -> str:
+        return "fake"
+
+    @property
+    def model(self) -> str:
+        return "fake-model"
+
+    def _call(self, name: str, task: AITaskContext) -> None:
+        self.calls.append((name, task))
+        if self.error is not None:
+            raise self.error
+
+    def hint(self, task: AITaskContext, level: int, previous: Sequence[str]) -> AIText:
+        self._call("hint", task)
+        return AIText(self.hint_text, usage())
+
+    def explain(self, task: AITaskContext, student_answer: str | None) -> AIText:
+        self._call("explain", task)
+        return AIText(self.explanation, usage())
+
+    def classify_mistake(
+        self,
+        task: AITaskContext,
+        student_answer: str | None,
+        categories: Sequence[str],
+        program_output: str | None,
+    ) -> AIMistakeSuggestion:
+        self._call("classify_mistake", task)
+        return AIMistakeSuggestion(self.category, 0.8, "похоже на ошибку в вычислениях", usage())
+
+    def grade_part2(
+        self, task: AITaskContext, solution_text: str, max_points: int
+    ) -> AIPart2Suggestion:
+        self._call("grade_part2", task)
+        return AIPart2Suggestion(self.criteria, "Решение в целом верное.", usage())
+
+    def generate_similar(self, task: AITaskContext) -> AITaskSuggestion:
+        self._call("generate_similar", task)
+        assert self.generated is not None, "тест должен задать generated"
+        return self.generated

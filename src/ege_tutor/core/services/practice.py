@@ -10,7 +10,7 @@
 """
 
 import datetime as dt
-from collections.abc import Callable, Collection
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 
 from ege_tutor.config import MasteryConfig
@@ -48,6 +48,7 @@ class ShownHint:
     level: int
     text: str
     independence: float  # коэффициент самостоятельности после этой подсказки
+    by_ai: bool = False  # подсказка от ИИ (Phase 6): показывается с пометкой «ИИ, предварительно»
 
 
 @dataclass(frozen=True)
@@ -205,8 +206,14 @@ class PracticeService:
             independence=self._mastery.independence.for_hint_level(level),
         )
 
-    def shown_hints(self, attempt_id: int) -> list[ShownHint]:
-        """Подсказки, уже показанные в этой попытке, по порядку показа."""
+    def shown_hints(
+        self, attempt_id: int, ai_texts: Mapping[int, str] | None = None
+    ) -> list[ShownHint]:
+        """Подсказки, уже показанные в этой попытке, по порядку показа.
+
+        ai_texts — тексты подсказок от ИИ по уровням (их хранит ИИ-помощник).
+        """
+        ai_texts = ai_texts or {}
         attempt = self._repo.get_attempt(attempt_id)
         if attempt is None:
             raise AppError(f"попытка №{attempt_id} не найдена")
@@ -218,11 +225,13 @@ class PracticeService:
                 if event.level == SOLUTION_LEVEL
                 else task_hint_text(task, event.level)
             )
+            by_ai = text is None and event.level in ai_texts
             shown.append(
                 ShownHint(
                     level=event.level,
-                    text=text or "",
+                    text=ai_texts[event.level] if by_ai else text or "",
                     independence=self._mastery.independence.for_hint_level(event.level),
+                    by_ai=by_ai,
                 )
             )
         return shown

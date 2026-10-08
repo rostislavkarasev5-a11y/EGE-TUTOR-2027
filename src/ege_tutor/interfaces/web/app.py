@@ -22,6 +22,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from ege_tutor import __version__
 from ege_tutor.core.app import AppError, TutorApp
 from ege_tutor.core.domain import (
+    AI_LABEL,
+    AI_PURPOSE_NAMES,
     CODE_VERDICT_LABELS,
     ITEM_BASIS_NAMES,
     MISTAKE_CATEGORY_NAMES,
@@ -217,6 +219,8 @@ def create_app(
         STOP_REASON_NAMES=STOP_REASON_NAMES,
         ItemBasis=ItemBasis,
         DiagnosticStatus=DiagnosticStatus,
+        AI_LABEL=AI_LABEL,
+        AI_PURPOSE_NAMES=AI_PURPOSE_NAMES,
         skill_title=tutor.skill_title,
         time_limit=f"{tutor.settings.app.sandbox.time_limit_seconds:g}",
         memory_limit=tutor.settings.app.sandbox.memory_limit_mb,
@@ -551,6 +555,9 @@ def create_app(
             task=task,
             show_answer=answer,
             reason=core.why_not_practicable(task),
+            ai=core.ai_status(),
+            generate_reason=core.why_cannot_generate(task),
+            grades=core.part2_grades(task.id),
         )
 
     @app.get("/tasks/{task_id}/files/{index}")
@@ -618,14 +625,22 @@ def create_app(
         code_enabled = task.subject == Subject.INFORMATICS
         if code_enabled:
             runs = core.code_runs(task.id, attempt_id, limit=5)
+        mistakes = core.attempt_mistakes(attempt_id)
+        ai = core.ai_status()
+        ai_allowed = session_id is None and core.ai_allowed_for(attempt_id)
         return render(
             request,
             "attempt.html",
+            ai=ai,
+            ai_allowed=ai_allowed,
+            ai_hint_level=core.ai_hint_level(attempt_id) if ai_allowed else None,
+            ai_explanation=core.ai_explanation(attempt_id) if ai_allowed else None,
+            ai_mistake=core.ai_mistake_note(mistakes[0].id) if ai_allowed and mistakes else None,
             code_enabled=code_enabled,
             sandbox_ready=code_enabled and core.sandbox.is_available,
             runs=runs,
             last_code=runs[0].code if runs else "",
-            mistakes=core.attempt_mistakes(attempt_id),
+            mistakes=mistakes,
             attempt=attempt,
             task=task,
             hints=hints,
@@ -683,6 +698,96 @@ def create_app(
         except AppError as e:
             flash(request, str(e), "warning")
         return redirect(f"/attempts/{attempt_id}#hints")
+
+    # ── ИИ-помощник (Phase 6) ──
+    # Ответ ИИ может идти до минуты, поэтому вызов — в отдельном потоке, а не в цикле сервера.
+
+    @app.post("/attempts/{attempt_id}/ai-hint")
+    async def ai_hint(request: Request, attempt_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            await run_in_threadpool(core.ai_hint, attempt_id)
+        except AppError as e:
+            flash(request, str(e), "warning")
+        return redirect(f"/attempts/{attempt_id}#hints")
+
+    @app.post("/attempts/{attempt_id}/explain")
+    async def ai_explain(request: Request, attempt_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            await run_in_threadpool(core.ai_explain, attempt_id)
+        except AppError as e:
+            flash(request, str(e), "warning")
+        return redirect(f"/attempts/{attempt_id}#ai")
+
+    @app.post("/mistakes/{mistake_id}/ai")
+    async def ai_mistake(
+        request: Request, mistake_id: int, back: Annotated[str, Form()] = "/mistakes"
+    ):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            await run_in_threadpool(core.ai_classify_mistake, mistake_id)
+        except AppError as e:
+            flash(request, str(e), "warning")
+        return redirect(_safe_next(back))
+
+    @app.post("/tasks/{task_id}/part2")
+    async def ai_part2(request: Request, task_id: int, solution: Annotated[str, Form()] = ""):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            grade = await run_in_threadpool(core.ai_grade_part2, task_id, solution)
+        except AppError as e:
+            flash(request, str(e), "warning")
+            return redirect(f"/tasks/{task_id}#part2")
+        return redirect(f"/grades/{grade.id}")
+
+    @app.get("/grades/{grade_id}", response_class=HTMLResponse)
+    def grade_page(request: Request, grade_id: int):
+        require_login(request)
+        try:
+            grade = core.part2_grade(grade_id)
+            task = core.task(grade.task_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/ai")
+        return render(request, "grade.html", grade=grade, task=task)
+
+    @app.post("/tasks/{task_id}/generate")
+    async def ai_generate(request: Request, task_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            made = await run_in_threadpool(core.ai_generate_similar, task_id)
+        except AppError as e:
+            flash(request, str(e), "warning")
+            return redirect(f"/tasks/{task_id}")
+        if made.task.can_practice:
+            flash(
+                request, f"ИИ составил задачу, CORE проверил ответ: {made.check_note}.", "success"
+            )
+        else:
+            flash(
+                request,
+                f"ИИ составил задачу, но ответ не проверен ({made.check_note}). "
+                "Сверь его сам на странице «Проверка».",
+                "warning",
+            )
+        return redirect(f"/tasks/{made.task.id}")
+
+    @app.get("/ai", response_class=HTMLResponse)
+    def ai_page(request: Request):
+        require_login(request)
+        return render(
+            request,
+            "ai.html",
+            ai=core.ai_status(),
+            calls=core.ai_calls(limit=50),
+            grades=core.part2_grades(),
+        )
 
     @app.post("/attempts/{attempt_id}/give-up")
     async def give_up(request: Request, attempt_id: int):

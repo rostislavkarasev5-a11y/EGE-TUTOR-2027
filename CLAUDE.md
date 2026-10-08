@@ -65,7 +65,7 @@ Python 3.13+, uv, SQLite, SQLAlchemy 2, Alembic, PyYAML (ADR-0010), Pydantic v2,
 - Никогда не коммить: `.env`, ключи API и токены, базы данных (`*.db`, `*.sqlite*`), `data/`, `private_content/`, `private_assets/`, `config/local.toml`.
 - Никогда не коммить реальные персональные данные пользователя (включая расписание) и задачи из сборников/ФИПИ. Примеры задач в `content/sample/` пишет только Claude и помечает их `AI_GENERATED`.
 - Перед каждым коммитом: `uv run python scripts/check_secrets.py`. В тестах фальшивые секреты собирай во время выполнения.
-- Не используй реальные ключи; Claude API ключ не нужен до Phase 6.
+- Не используй реальные ключи. Ключ ИИ (Yandex AI Studio, Phase 6) живёт только на сервере в `/etc/ege-tutor/web.env`; владелец вводит его сам через `deploy/set-ai-key.sh`, в Git и в чат он не попадает.
 
 ## Правила разработки
 
