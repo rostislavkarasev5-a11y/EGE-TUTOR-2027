@@ -27,3 +27,4 @@ ADR — короткая запись одного архитектурного 
 | [0015](0015-mastery-v0-details.md) | Mastery v0, ошибки и повторения: недостающие детали формул | Accepted |
 | [0016](0016-starter-bank-and-diagnostics.md) | Стартовый банк задач и адаптивная диагностика: детали | Accepted |
 | [0017](0017-ai-via-yandex-ai-studio.md) | ИИ-слой через Yandex AI Studio | Accepted |
+| [0018](0018-voice-tutor-speechkit.md) | Разговор с репетитором и голос через Yandex SpeechKit | Proposed |
