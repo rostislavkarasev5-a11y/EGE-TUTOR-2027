@@ -1,23 +1,49 @@
 {% extends "base.html" %}
 {% from "macros.html" import csrf_field, subject_select with context %}
 {% block content %}
-<h1>{% if profile.display_name %}Привет, {{ profile.display_name }}!{% else %}Привет!{% endif %}</h1>
+<h1>{% if profile.display_name %}Привет, {{ profile.display_name }}!{% else %}Привет!{% endif %}
+  <span class="accent">Решим пару задач?</span></h1>
+
+<ul class="pills" aria-label="Экзамены">
+  {% for exam in info.exams %}
+  <li class="pill"><strong>{{ SUBJECT_NAMES[exam.subject] }}</strong>
+    · {% if exam.date %}{{ exam.date.strftime("%d.%m.%Y") }}{% if exam.days_left is not none %}, осталось дней: {{ exam.days_left }}{% endif %}{% else %}дата не утверждена (TBD){% endif %}
+    · цель {{ profile.targets[exam.subject] }}</li>
+  {% endfor %}
+</ul>
 
 {% if has_unverified %}
 <p class="flash warning">Есть задачи с непроверенным ответом. Их можно решать только после проверки:
   <a href="/review">проверить</a>.</p>
 {% endif %}
 
-<section class="card">
-  <h2>Решать задачи</h2>
-  <form method="post" action="/solve" class="row">
-    {{ csrf_field() }}
-    {{ subject_select("") }}
-    <input type="number" name="item" min="1" max="27" placeholder="№ задания" inputmode="numeric">
-    <button type="submit">Дать задачу</button>
-  </form>
-  <p class="meta">Сначала выдаются задачи, которые ты решал реже и давнее всего.</p>
-</section>
+<div class="grid-2">
+  <section class="card hero stack">
+    <h2>Решать задачи</h2>
+    <form method="post" action="/solve" class="row">
+      {{ csrf_field() }}
+      {{ subject_select("") }}
+      <input type="number" name="item" min="1" max="27" placeholder="№ задания" inputmode="numeric" aria-label="Номер задания">
+      <button type="submit">Дать задачу</button>
+    </form>
+    <p class="meta">Сначала выдаются задачи, которые ты решал реже и давнее всего.</p>
+  </section>
+
+  <section class="card stack">
+    <h2>Повторение</h2>
+    {% if queue %}
+    <p class="big-number">{{ queue|length }}</p>
+    <p>В очереди повторений: {{ queue|length }}. Первым — {{ queue[0].skill_title }}
+      ({{ REVIEW_REASON_NAMES[queue[0].reason] }}).</p>
+    <form method="post" action="/repeat" class="push">
+      {{ csrf_field() }}
+      <button type="submit" class="secondary">Повторить</button>
+    </form>
+    {% else %}
+    <p class="meta">Повторять пока нечего. Сюда попадут темы, которые пора освежить, и частые ошибки.</p>
+    {% endif %}
+  </section>
+</div>
 
 <section class="card">
   <h2>Диагностика</h2>
@@ -26,42 +52,13 @@
 </section>
 
 <section class="card">
-  <h2>Повторение</h2>
-  {% if queue %}
-  <p>В очереди повторений: {{ queue|length }}. Первым — {{ queue[0].skill_title }}
-    ({{ REVIEW_REASON_NAMES[queue[0].reason] }}).</p>
-  <form method="post" action="/repeat">
-    {{ csrf_field() }}
-    <button type="submit">Повторить</button>
-  </form>
-  {% else %}
-  <p>Повторять пока нечего. Сюда попадут темы, которые пора освежить, и частые ошибки.</p>
-  {% endif %}
-</section>
-
-<section class="card">
-  <h2>Экзамены</h2>
-  <table>
-    <tr><th>Предмет</th><th>Дата</th><th>Осталось дней</th><th>Цель</th></tr>
-    {% for exam in info.exams %}
-    <tr>
-      <td>{{ SUBJECT_NAMES[exam.subject] }}</td>
-      <td>{% if exam.date %}{{ exam.date.strftime("%d.%m.%Y") }}{% else %}не утверждена (TBD){% endif %}</td>
-      <td>{{ exam.days_left if exam.days_left is not none else "—" }}</td>
-      <td>{{ profile.targets[exam.subject] }}</td>
-    </tr>
-    {% endfor %}
-  </table>
-</section>
-
-<section class="card">
   <h2>Состояние</h2>
-  <ul class="plain">
-    <li>Задач в базе: {{ info.task_count }}</li>
-    <li>Песочница для программ: {{ "готова" if info.sandbox_available else "не настроена" }}</li>
-    <li><a href="/ai">ИИ</a>: {{ "подключён" if info.ai_available else "не подключён" }}</li>
+  <ul class="facts">
+    <li>Задач в базе: <strong>{{ info.task_count }}</strong></li>
+    <li>Песочница для программ: <strong>{{ "готова" if info.sandbox_available else "не настроена" }}</strong></li>
+    <li><a href="/ai">ИИ</a>: <strong>{{ "подключён" if info.ai_available else "не подключён" }}</strong></li>
   </ul>
-  <form method="post" action="/backup">
+  <form method="post" action="/backup" class="actions">
     {{ csrf_field() }}
     <button type="submit" class="secondary">Скачать копию базы</button>
   </form>

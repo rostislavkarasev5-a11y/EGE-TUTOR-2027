@@ -4,38 +4,50 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0d111c">
 <title>{% block title %}EGE-TUTOR-2027{% endblock %}</title>
+<link rel="preload" href="/static/fonts/golos-text-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
-<header class="top">
-  <a class="brand" href="/">EGE-TUTOR</a>
+{% set path = request.url.path %}
+{% macro nav_link(href, text) -%}
+<a href="{{ href }}"{% if path == href or (href in ("/tasks", "/diagnostics", "/mistakes") and path.startswith(href ~ "/")) or (href == "/tasks" and path.startswith(("/attempts/", "/grades/"))) %} class="active" aria-current="page"{% endif %}>{{ text }}</a>
+{%- endmacro %}
+<body{% if not logged_in %} class="page-plain"{% endif %}>
+<div class="shell">
   {% if logged_in %}
-  <nav>
-    <a href="/">Главная</a>
-    <a href="/tasks">Задачи</a>
-    <a href="/diagnostics">Диагностика</a>
-    <a href="/progress">Прогресс</a>
-    <a href="/mistakes">Ошибки</a>
-    <a href="/review">Проверка</a>
-    <a href="/attempts">История</a>
-    <a href="/ai">ИИ</a>
-    <a href="/import">Импорт</a>
-    <a href="/profile">Профиль</a>
-    <form method="post" action="/logout" class="inline">
-      <input type="hidden" name="csrf" value="{{ csrf }}">
-      <button class="link" type="submit">Выйти</button>
-    </form>
-  </nav>
+  <aside class="side">
+    <a class="brand" href="/">ege<span>/</span>tutor</a>
+    <nav aria-label="Разделы">
+      {{ nav_link("/", "Главная") }}
+      {{ nav_link("/tasks", "Задачи") }}
+      {{ nav_link("/diagnostics", "Диагностика") }}
+      {{ nav_link("/progress", "Прогресс") }}
+      {{ nav_link("/mistakes", "Ошибки") }}
+      {{ nav_link("/review", "Проверка") }}
+      {{ nav_link("/attempts", "История") }}
+      {{ nav_link("/ai", "ИИ") }}
+      <span class="spacer"></span>
+      {{ nav_link("/import", "Импорт") }}
+      {{ nav_link("/profile", "Профиль") }}
+      <form method="post" action="/logout" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="link" type="submit">Выйти</button>
+      </form>
+    </nav>
+  </aside>
   {% endif %}
-</header>
-<main>
-  {% for kind, text in messages %}
-  <p class="flash {{ kind }}">{{ text }}</p>
-  {% endfor %}
-  {% block content %}{% endblock %}
-</main>
-<footer>EGE-TUTOR-2027 {{ version }}</footer>
+  <div class="content">
+    <main>
+      {% if not logged_in %}<a class="brand" href="/">ege<span>/</span>tutor</a>{% endif %}
+      {% for kind, text in messages %}
+      <p class="flash {{ kind }}">{{ text }}</p>
+      {% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer>EGE-TUTOR-2027 {{ version }}</footer>
+  </div>
+</div>
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -4,11 +4,16 @@
 
 {% macro statement(task) -%}
 <section class="card">
-  <h2>Задача {{ task.id }} · {{ SUBJECT_NAMES[task.subject] }} · задание №{{ task.exam_item }}</h2>
-  <div class="statement">{{ task.statement }}</div>
+  <div class="tags">
+    <span class="tag num">№ {{ task.exam_item }}</span>
+    <span class="tag">{{ SUBJECT_NAMES[task.subject] }}</span>
+    <span class="tag">задача {{ task.id }}</span>
+  </div>
+  <h2 class="sr-only">Задача {{ task.id }} · {{ SUBJECT_NAMES[task.subject] }} · задание №{{ task.exam_item }}</h2>
+  <div class="statement task-statement">{{ task.statement }}</div>
   <p class="meta">Источник: {{ source(task) }} — {{ task.source_ref }}</p>
   {% if task.assets %}
-  <p class="meta">Файлы:
+  <p class="meta files">Файлы:
     {% for asset in task.assets %}
     <a href="/tasks/{{ task.id }}/files/{{ loop.index0 }}" download>{{ asset.file_name }}</a>{% if not loop.last %}, {% endif %}
     {% endfor %}
