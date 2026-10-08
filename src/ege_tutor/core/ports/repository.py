@@ -10,7 +10,11 @@ from ege_tutor.core.domain import (
     Catalog,
     CodeRun,
     CodeVerdict,
+    DiagnosticItemResult,
+    DiagnosticSession,
+    DiagnosticStatus,
     ExamSpec,
+    Forecast,
     HintEvent,
     ImportBatch,
     MasteryRecord,
@@ -20,6 +24,7 @@ from ege_tutor.core.domain import (
     MistakeDraft,
     MistakePattern,
     Prediction,
+    StopReason,
     StudentProfile,
     Subject,
     Task,
@@ -246,3 +251,40 @@ class Repository(Protocol):
     def save_patterns(self, skill_code: str, patterns: Sequence[MistakePattern]) -> None: ...
 
     def list_patterns(self, open_only: bool = True) -> list[MistakePattern]: ...
+
+    # ── диагностика (Phase 5) ──
+
+    def create_diagnostic_session(
+        self, subject: Subject, model_version: str, started_at: dt.datetime
+    ) -> DiagnosticSession: ...
+
+    def get_diagnostic_session(self, session_id: int) -> DiagnosticSession | None: ...
+
+    def active_diagnostic_session(self, subject: Subject) -> DiagnosticSession | None: ...
+
+    def list_diagnostic_sessions(
+        self, subject: Subject | None = None, limit: int = 20
+    ) -> list[DiagnosticSession]:
+        """Сессии диагностики, новые первыми."""
+        ...
+
+    def add_diagnostic_attempt(self, session_id: int, attempt_id: int) -> None: ...
+
+    def diagnostic_attempts(self, session_id: int) -> list[tuple[Attempt, int | None]]:
+        """Попытки сессии по порядку начала и сложность их задач."""
+        ...
+
+    def diagnostic_session_of_attempt(self, attempt_id: int) -> int | None: ...
+
+    def finish_diagnostic_session(
+        self,
+        session_id: int,
+        *,
+        status: DiagnosticStatus,
+        at: dt.datetime,
+        reason: StopReason | None,
+        forecast: Forecast | None,
+        results: Sequence[DiagnosticItemResult],
+    ) -> DiagnosticSession: ...
+
+    def diagnostic_results(self, session_id: int) -> list[DiagnosticItemResult]: ...

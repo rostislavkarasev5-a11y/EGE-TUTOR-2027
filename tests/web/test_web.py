@@ -563,3 +563,49 @@ def test_progress_mistakes_and_repeat(client, tutor):
 def test_repeat_with_empty_queue(client):
     response = post(client, "/repeat")
     assert "очередь повторений пуста" in response.text
+
+
+# ── стартовый банк и диагностика (Phase 5) ─────────────────────────────────
+
+
+def test_diagnostic_flow_on_site(client, tutor):
+    empty = client.get("/diagnostics")
+    assert "Загрузить стартовый банк" in empty.text
+    assert "нет проверенных задач" in empty.text
+
+    loaded = post(client, "/bank")
+    assert "Стартовый банк загружен: добавлено задач 138" in loaded.text
+    assert "Начать диагностику" in loaded.text
+    assert "добавлено задач 0" in post(client, "/bank").text  # повторно не добавляются
+
+    first = post(client, "/diagnostics/start", {"subject": "math"})
+    assert "/attempts/" in str(first.url)
+    assert "Диагностика · задача 1" in first.text
+    assert "Сгенерировано ИИ" in first.text
+    assert "Подсказка" not in first.text and "Похожая задача" not in first.text
+    first_id = str(first.url).rsplit("/", 1)[-1]
+    assert "подсказок нет" in post(client, f"/attempts/{first_id}/hint").text
+    assert "похожих задач" in post(client, f"/attempts/{first_id}/similar").text
+
+    second = post(client, f"/attempts/{first_id}/answer", {"answer": "0"})
+    assert "Диагностика · задача 2" in second.text
+    second_id = str(second.url).rsplit("/", 1)[-1]
+    third = post(client, f"/attempts/{second_id}/give-up")
+    assert "Диагностика · задача 3" in third.text
+
+    # ответ уже решённой задачи не показывается по одному — только итог
+    back = client.get(f"/attempts/{first_id}")
+    assert "/diagnostics/" in str(back.url)
+    session_id = str(back.url).rsplit("/", 1)[-1]
+    assert "Решено задач: 2" in back.text
+
+    # прервал и вернулся: та же задача
+    resumed = post(client, f"/diagnostics/{session_id}/continue")
+    assert str(resumed.url) == str(third.url)
+
+    done = post(client, f"/diagnostics/{session_id}/finish")
+    assert "Диагностика завершена" in done.text
+    assert "первичных баллов" in done.text and "выведено косвенно" in done.text
+    assert 'style="' not in done.text
+    assert "завершена" in client.get("/diagnostics").text
+    assert "уже завершена" in post(client, f"/diagnostics/{session_id}/finish").text

@@ -46,6 +46,10 @@
 {% endif %}
 {% endmacro %}
 {% block content %}
+{% if diagnostic %}
+<p class="flash info">Диагностика · задача {{ diagnostic.tasks_done + 1 }} (не больше {{ diagnostic.max_tasks }}) ·
+  без подсказок, ответ даётся один раз.</p>
+{% endif %}
 {{ statement(task) }}
 
 <section class="card">
@@ -75,8 +79,20 @@
     {{ csrf_field() }}
     <input type="text" name="answer" autocomplete="off" autocapitalize="off" spellcheck="false"
       placeholder="Ответ, например 0,4" required autofocus>
-    <button type="submit">Проверить</button>
+    <button type="submit">{% if diagnostic %}Ответить{% else %}Проверить{% endif %}</button>
   </form>
+  {% if diagnostic %}
+  <div class="row actions">
+    <form method="post" action="/attempts/{{ attempt.id }}/give-up">{{ csrf_field() }}<button class="secondary" type="submit">Не знаю</button></form>
+    <a href="/diagnostics">Прервать (продолжу потом)</a>
+    <form method="post" action="/diagnostics/{{ diagnostic.session.id }}/finish">{{ csrf_field() }}<button class="link" type="submit">Завершить диагностику сейчас</button></form>
+  </div>
+  {% if task.answer_type.value == "EXTENDED" %}
+  <p class="meta">Это задание части 2: введи только итоговый ответ (несколько чисел — через «;»). Оформление решения здесь не проверяется.</p>
+  {% else %}
+  <p class="meta">Ответ пиши как на бланке ЕГЭ: целое число или десятичная дробь через запятую.</p>
+  {% endif %}
+  {% else %}
   <div class="row actions">
     <form method="post" action="/attempts/{{ attempt.id }}/hint">{{ csrf_field() }}<button class="secondary" type="submit">Подсказка</button></form>
     <form method="post" action="/attempts/{{ attempt.id }}/give-up">{{ csrf_field() }}<button class="secondary" type="submit">Сдаюсь</button></form>
@@ -84,6 +100,7 @@
     <form method="post" action="/attempts/{{ attempt.id }}/abandon">{{ csrf_field() }}<button class="link" type="submit">Выйти</button></form>
   </div>
   <p class="meta">Ответ пиши как на бланке ЕГЭ: целое число или десятичная дробь через запятую.</p>
+  {% endif %}
   {% if code_enabled %}{{ code_block() }}{% endif %}
   {% else %}
     {% if attempt.status == AttemptStatus.ANSWERED %}

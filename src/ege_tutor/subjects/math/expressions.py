@@ -7,6 +7,7 @@
 
 import re
 from fractions import Fraction
+from tokenize import TokenError
 
 import sympy
 from sympy.parsing.sympy_parser import (
@@ -48,7 +49,15 @@ def numeric_value(text: str) -> Fraction | None:
         return None
     try:
         expr = sympy.nsimplify(parse_expr(prepared, transformations=_TRANSFORMS))
-    except (SyntaxError, TypeError, ValueError, ZeroDivisionError, AttributeError, IndexError):
+    except (
+        SyntaxError,
+        TypeError,
+        ValueError,
+        ZeroDivisionError,
+        AttributeError,
+        IndexError,
+        TokenError,  # незакрытая скобка: «(»
+    ):
         return None
     if not expr.is_number or not expr.is_rational:
         return None

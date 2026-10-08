@@ -16,8 +16,10 @@ from ege_tutor import __version__
 from ege_tutor.config import ConfigError
 from ege_tutor.core.app import AppError, TutorApp
 from ege_tutor.core.domain import (
+    ITEM_BASIS_NAMES,
     MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
+    STOP_REASON_NAMES,
     AnswerKind,
     AnswerType,
     Attempt,
@@ -25,8 +27,13 @@ from ege_tutor.core.domain import (
     AttemptStatus,
     CodeRun,
     CodeVerdict,
+    DiagnosticSession,
+    DiagnosticState,
+    DiagnosticStatus,
+    Forecast,
     ImportBatchStatus,
     ImportReport,
+    ItemBasis,
     MistakeCategory,
     ReviewReason,
     Subject,
@@ -992,6 +999,166 @@ def runs(
             Text(r.answer_guess or "—"),
         )
     console.print(table)
+
+
+# ── стартовый банк и диагностика (Phase 5) ─────────────────────────────────
+
+FINISH_WORDS = {"закончить", "finish"}
+DIAGNOSTIC_STATUS_NAMES = {
+    DiagnosticStatus.ACTIVE: "идёт",
+    DiagnosticStatus.FINISHED: "завершена",
+    DiagnosticStatus.ABANDONED: "брошена",
+}
+
+
+@app.command()
+def bank() -> None:
+    """Загрузить стартовый банк проверенных задач (по 3 на каждый номер ЕГЭ)."""
+    tutor = _tutor()
+    try:
+        results = tutor.install_starter_bank()
+    except AppError as e:
+        raise _fail(str(e)) from e
+    for result in results:
+        report = result.report
+        duplicates = len(report.rejected_rows)
+        console.print(
+            f"{report.file_name}: добавлено {len(report.accepted) if result.batch else 0}"
+            + (f", уже были в базе {duplicates}" if duplicates else "")
+        )
+    console.print(
+        "[dim]Задачи стартового банка написаны ИИ (не задания ФИПИ), их ответы проверены "
+        "тестами. Диагностика: ege diagnose math[/]"
+    )
+
+
+def _forecast_text(forecast: Forecast) -> str:
+    return (
+        f"{forecast.mean:.0f} из {forecast.max_points} первичных баллов "
+        f"(вероятнее всего от {forecast.low:.0f} до {forecast.high:.0f})"
+    )
+
+
+def _print_diagnostic_state(state: DiagnosticState) -> None:
+    table = _table(title=f"Диагностика: {SUBJECT_NAMES[state.session.subject]}")
+    for column in ("№", "Задание", "Решу", "Уверенность", "Как получено"):
+        table.add_column(column)
+    for e in state.estimates:
+        basis = ITEM_BASIS_NAMES[e.basis]
+        if e.basis == ItemBasis.DIRECT:
+            basis += f" ({e.answered} зад.)"
+        if e.answer_only and e.basis == ItemBasis.DIRECT:
+            basis += ", по ответу"
+        table.add_row(
+            str(e.exam_item), e.title, _percent(e.probability), _percent(e.confidence), basis
+        )
+    console.print(table)
+    console.print(f"Прогноз: {_forecast_text(state.forecast)}.")
+    console.print(
+        "[dim]Это предварительный baseline. Тестовые баллы появятся вместе с официальной "
+        "таблицей перевода. Задания части 2 оценены только по итоговому ответу.[/]"
+    )
+
+
+def _print_session_end(tutor: TutorApp, session: DiagnosticSession) -> None:
+    if session.stop_reason is not None:
+        console.print(f"Диагностика завершена: {STOP_REASON_NAMES[session.stop_reason]}.")
+    _print_diagnostic_state(tutor.diagnostic_state(session.id))
+
+
+@app.command()
+def diagnose(
+    subject: Annotated[str, typer.Argument(help=SUBJECT_HELP)],
+) -> None:
+    """Адаптивная диагностика: без подсказок, с таймером. Можно прервать и продолжить."""
+    tutor = _tutor()
+    parsed = _subject(subject)
+    assert parsed is not None
+    try:
+        session = tutor.start_diagnostic(parsed)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(
+        "[dim]Подсказок нет. Ответ на задачу даётся один раз. Команды: сдаюсь — не знаю, "
+        "выход — прервать (продолжишь той же командой), закончить — завершить сейчас.[/]"
+    )
+    while True:
+        step = tutor.diagnostic_step(session.id)
+        if step.attempt is None or step.task is None:
+            _print_session_end(tutor, step.session)
+            return
+        state = tutor.diagnostic_state(session.id)
+        console.print(f"[bold]Задача {state.tasks_done + 1} (не больше {state.max_tasks})[/]")
+        _show_task_header(tutor, step.task, step.attempt)
+        while True:
+            try:
+                text = typer.prompt("Ответ", prompt_suffix=": ").strip()
+            except (typer.Abort, EOFError, KeyboardInterrupt):
+                console.print("\nДиагностика прервана. Продолжить: ege diagnose " + subject)
+                return
+            command = text.casefold()
+            if command in EXIT_WORDS:
+                console.print("Диагностика прервана. Продолжить: ege diagnose " + subject)
+                return
+            if command in FINISH_WORDS:
+                _print_session_end(tutor, tutor.finish_diagnostic(session.id))
+                return
+            if command in GIVE_UP_WORDS:
+                tutor.give_up(step.attempt.id)
+                break
+            if command in HINT_WORDS:
+                console.print("[yellow]В диагностике подсказок нет.[/]")
+                continue
+            try:
+                tutor.submit_answer(step.attempt.id, text)
+            except AppError as e:
+                console.print(f"[yellow]{e}[/]")
+                continue
+            break
+        console.print("[dim]Ответ записан.[/]")
+
+
+def _show_task_header(tutor: TutorApp, t: Task, attempt: Attempt) -> None:
+    header = f"{SUBJECT_NAMES[t.subject]} · задание №{t.exam_item}"
+    console.print(_panel(t.statement, title=header, title_align="left"))
+    console.print(f"Источник: {_source_text(t.source)} — {t.source_ref}")
+    for asset in t.assets:
+        console.print(f"Файл: {asset.file_name} → {tutor.asset_path(asset)}")
+    if t.answer_type == AnswerType.EXTENDED:
+        console.print("[dim]Это задание части 2: введи только итоговый ответ (числа через «;»).[/]")
+    console.print(f"Норматив {_minutes(attempt.time_norm_seconds)} · время пошло")
+
+
+@app.command()
+def diagnostics(
+    session_id: Annotated[int | None, typer.Argument(help="Номер диагностики.")] = None,
+    subject: Annotated[str | None, typer.Option("--subject", "-s", help=SUBJECT_HELP)] = None,
+) -> None:
+    """Прошлые диагностики и их итог (предварительный baseline)."""
+    tutor = _tutor()
+    if session_id is not None:
+        try:
+            _print_diagnostic_state(tutor.diagnostic_state(session_id))
+        except AppError as e:
+            raise _fail(str(e)) from e
+        return
+    sessions = tutor.diagnostic_sessions(_subject(subject))
+    if not sessions:
+        console.print("Диагностик ещё не было. Начать: ege diagnose math")
+        return
+    table = _table(title="Диагностики")
+    for column in ("№", "Предмет", "Начата", "Статус", "Прогноз"):
+        table.add_column(column)
+    for s in sessions:
+        table.add_row(
+            str(s.id),
+            SUBJECT_NAMES[s.subject],
+            s.started_at.strftime("%d.%m.%Y %H:%M"),
+            DIAGNOSTIC_STATUS_NAMES[s.status],
+            _forecast_text(s.forecast) if s.forecast else "—",
+        )
+    console.print(table)
+    console.print("Подробно: ege diagnostics НОМЕР")
 
 
 def run() -> None:

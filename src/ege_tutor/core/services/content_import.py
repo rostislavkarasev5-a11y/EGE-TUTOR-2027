@@ -277,6 +277,7 @@ def _validate_record(
     specs: dict[Subject, ExamSpec],
     skill_items: Callable[[Subject], dict[str, tuple[int, ...]]],
     base_dir: Path,
+    starter_bank: bool = False,
 ) -> TaskDraft | None:
     unknown = set(record) - KNOWN_FIELDS - {"time_norm_seconds"}
     if unknown:
@@ -330,7 +331,12 @@ def _validate_record(
             check.error(
                 "verification_status: при импорте можно указать только UNVERIFIED или REVIEWED"
             )
-    if source == TaskSource.AI_GENERATED and status != VerificationStatus.UNVERIFIED:
+    # Исключение — стартовый банк (ADR-0016): его ответы проверены тестами репозитория.
+    if (
+        source == TaskSource.AI_GENERATED
+        and status != VerificationStatus.UNVERIFIED
+        and not starter_bank
+    ):
         check.error("verification_status: задача от ИИ при импорте всегда UNVERIFIED")
 
     # ответ
@@ -437,8 +443,12 @@ def build_report(
     specs: dict[Subject, ExamSpec],
     skill_items: Callable[[Subject], dict[str, tuple[int, ...]]],
     existing_hashes: Callable[[set[str]], set[str]],
+    starter_bank: bool = False,
 ) -> ImportReport:
-    """Проверить файл и собрать отчёт. Ничего не записывает."""
+    """Проверить файл и собрать отчёт. Ничего не записывает.
+
+    starter_bank — файл стартового банка из репозитория: его задачи от ИИ могут быть REVIEWED.
+    """
     report = ImportReport(file_name=path.name, file_format=path.suffix.lower().lstrip("."))
     try:
         report.file_format, records = read_records(path)
@@ -450,7 +460,7 @@ def build_report(
     drafts: list[tuple[int, TaskDraft]] = []
     for row, record in enumerate(records, start=1):
         check = _RowChecker(row, report.errors, report.warnings)
-        draft = _validate_record(record, check, specs, skill_items, path.parent)
+        draft = _validate_record(record, check, specs, skill_items, path.parent, starter_bank)
         if draft is not None:
             drafts.append((row, draft))
 
