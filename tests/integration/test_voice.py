@@ -259,19 +259,21 @@ def test_listen(app, ids, fake_speech):
     assert app.chat_messages(attempt.id) == []  # текст ученик отправит сам
 
 
+# В параметрах — длина записи, а не сами байты: иначе имя теста становится огромным,
+# и на Windows pytest не может записать его в переменную окружения.
 @pytest.mark.parametrize(
-    ("pcm", "rate", "message"),
+    ("size", "rate", "message"),
     [
-        (b"\0" * 100, 16_000, "короткая"),
-        (b"\0" * (SECOND * 31), 16_000, "длиннее"),
-        (b"\0" * SECOND, 11_025, "частота"),
-        (b"\0" * (SECOND + 1), 16_000, "повреждена"),
+        (100, 16_000, "короткая"),
+        (SECOND * 31, 16_000, "длиннее"),
+        (SECOND, 11_025, "частота"),
+        (SECOND + 1, 16_000, "повреждена"),
     ],
 )
-def test_listen_rejects_bad_recordings(app, ids, fake_speech, pcm, rate, message):
+def test_listen_rejects_bad_recordings(app, ids, fake_speech, size, rate, message):
     attempt = app.start_attempt(ids[1])
     with pytest.raises(AppError, match=message):
-        app.listen(attempt.id, pcm, rate)
+        app.listen(attempt.id, b"\0" * size, rate)
     assert fake_speech.heard == []
 
 
