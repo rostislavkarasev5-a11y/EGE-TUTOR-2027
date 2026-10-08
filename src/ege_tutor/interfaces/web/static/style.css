@@ -474,3 +474,48 @@ textarea.solution {
 /* страница входа: без меню, по центру */
 .page-plain main > .brand { text-align: center; padding: 0 0 20px; }
 .page-plain footer { text-align: center; }
+
+/* ── репетитор и голос (Phase 6.5, ADR-0018) ───────────────────────── */
+.tutor-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+  gap: 8px 16px; margin-bottom: 14px; }
+.tutor-head h2 { margin: 0; }
+.switch { display: inline-flex; align-items: center; gap: 8px; margin: 0; color: var(--muted);
+  font-size: 14px; cursor: pointer; }
+.switch input { width: 18px; height: 18px; min-height: 0; accent-color: var(--accent); }
+.chat { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
+.msg { max-width: 88%; padding: 12px 16px; border-radius: 16px; }
+.msg.student { align-self: flex-end; background: var(--card-2); border-bottom-right-radius: 6px; }
+.msg.tutor { align-self: flex-start; background: var(--ai-bg); border: 1px solid var(--ai-line);
+  border-bottom-left-radius: 6px; }
+.msg .listen { margin-top: 8px; }
+form.ask textarea {
+  width: 100%;
+  min-height: 64px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-2);
+  background: var(--bg);
+  resize: vertical;
+}
+form.ask p.meta:empty { display: none; }
+button.mic.recording { background: var(--bad); border-color: var(--bad); color: var(--on-accent); }
+button.listen {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 12px;
+  margin-top: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--ai-line);
+  background: transparent;
+  color: var(--ai);
+  font-size: 13px;
+  font-weight: 600;
+}
+button.listen:hover { background: var(--ai-line); border-color: var(--ai-line); color: #fff; }
+button.listen.loading { opacity: 0.6; cursor: progress; }
+button.listen.playing { background: var(--ai-line); color: #fff; }
+button.listen.ready { border-color: var(--accent); color: var(--accent); }
+button.listen.failed { border-color: var(--bad); color: var(--bad); }

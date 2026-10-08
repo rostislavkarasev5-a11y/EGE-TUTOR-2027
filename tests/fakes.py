@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from ege_tutor.core.domain import (
+    AIChatReply,
     AICriterionScore,
     AIError,
     AIMistakeSuggestion,
@@ -15,6 +16,8 @@ from ege_tutor.core.domain import (
     AITaskSuggestion,
     AIText,
     AIUsage,
+    ChatTurn,
+    SpeechError,
 )
 from ege_tutor.core.ports.sandbox import RunRequest, RunResult, SandboxVerdict
 
@@ -89,6 +92,9 @@ class FakeAIService:
             AICriterionScore("Обоснованно получен верный ответ", 2, 2, "всё верно"),
         )
         self.generated: AITaskSuggestion | None = None
+        self.chat_text = "Посмотри, как связаны основания степеней."
+        self.chat_speech = "Посмотри, как связаны основания степеней."
+        self.chat_requests: list[tuple[list[ChatTurn], str, bool]] = []
         self.error: AIError | None = None
 
     @property
@@ -140,3 +146,50 @@ class FakeAIService:
         self._call("generate_similar", task)
         assert self.generated is not None, "тест должен задать generated"
         return self.generated
+
+    def chat(
+        self,
+        task: AITaskContext,
+        history: Sequence[ChatTurn],
+        question: str,
+        *,
+        finished: bool,
+    ) -> AIChatReply:
+        self._call("chat", task)
+        self.chat_requests.append((list(history), question, finished))
+        return AIChatReply(self.chat_text, self.chat_speech, usage())
+
+
+class FakeSpeechService:
+    """Голос для тестов: без интернета и без денег."""
+
+    def __init__(self, *, available: bool = True) -> None:
+        self.available = available
+        self.spoken: list[str] = []
+        self.heard: list[tuple[int, int]] = []  # (байт, частота)
+        self.transcript = "почему здесь логарифм"
+        self.error: SpeechError | None = None
+
+    @property
+    def is_available(self) -> bool:
+        return self.available
+
+    @property
+    def unavailable_reason(self) -> str | None:
+        return None if self.available else "голос выключен"
+
+    @property
+    def voice(self) -> str:
+        return "fake-voice"
+
+    def synthesize(self, text: str) -> bytes:
+        if self.error is not None:
+            raise self.error
+        self.spoken.append(text)
+        return b"ID3" + text.encode("utf-8")
+
+    def recognize(self, pcm: bytes, sample_rate: int) -> str:
+        if self.error is not None:
+            raise self.error
+        self.heard.append((len(pcm), sample_rate))
+        return self.transcript

@@ -82,6 +82,37 @@ class AIConfig(_Strict):
         ) / 1000
 
 
+class SpeechConfig(_Strict):
+    """Голос репетитора (Phase 6.5, ADR-0018): Yandex SpeechKit тем же ключом, что и ИИ.
+
+    Голос работает, только когда включён ИИ: у них общий ключ и общий месячный лимит.
+    """
+
+    enabled: bool
+    voice: Annotated[str, Field(min_length=1, max_length=40)]
+    role: Annotated[str, Field(max_length=40)] = ""
+    speed: Annotated[float, Field(ge=0.5, le=2.0)] = 1.0
+    tts_url: Annotated[str, Field(pattern=r"^https://")]
+    stt_url: Annotated[str, Field(pattern=r"^https://")]
+    # Цены по прайсу Yandex Cloud, рубли с НДС. Озвучка (API v3) — за запрос; длинный текст
+    # SpeechKit делит на части, поэтому CORE считает запрос на каждые chars_per_request символов.
+    price_tts_per_request_rub: NonNegative
+    chars_per_request: Annotated[int, Field(gt=0)] = 250
+    max_tts_chars: Annotated[int, Field(gt=0, le=5000)] = 3000
+    # Распознавание (API v1, короткое аудио) — за каждые начатые 15 секунд.
+    price_stt_per_15s_rub: NonNegative
+    max_recording_seconds: Annotated[int, Field(gt=0, le=30)] = 30
+    timeout_seconds: PositiveWeight = 60
+
+    def tts_cost_rub(self, chars: int) -> float:
+        """Стоимость озвучки текста с запасом: запрос на каждые chars_per_request символов."""
+        return -(-max(chars, 1) // self.chars_per_request) * self.price_tts_per_request_rub
+
+    def stt_cost_rub(self, seconds: float) -> float:
+        """Стоимость распознавания: каждые начатые 15 секунд."""
+        return -(-max(seconds, 0.001) // 15) * self.price_stt_per_15s_rub
+
+
 SandboxBackend = Literal["docker", "wsl2"]
 
 
@@ -99,6 +130,7 @@ class AppConfig(_Strict):
     app: AppSection
     exams: dict[Subject, ExamDateConfig]
     ai: AIConfig
+    speech: SpeechConfig
     sandbox: SandboxConfig
 
     @model_validator(mode="after")

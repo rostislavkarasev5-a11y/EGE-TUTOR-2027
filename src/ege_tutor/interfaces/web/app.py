@@ -93,6 +93,10 @@ SECURITY_HEADERS = {
 }
 
 
+# Самая длинная запись вопроса: 30 секунд 16-битного звука с частотой 48 кГц.
+MAX_RECORDING_BYTES = 30 * 48_000 * 2
+
+
 class LockedTutor:
     """TutorApp, к которому запросы обращаются по очереди.
 
@@ -224,6 +228,7 @@ def create_app(
         skill_title=tutor.skill_title,
         time_limit=f"{tutor.settings.app.sandbox.time_limit_seconds:g}",
         memory_limit=tutor.settings.app.sandbox.memory_limit_mb,
+        speech_max_seconds=tutor.settings.app.speech.max_recording_seconds,
         version=__version__,
     )
     templates.env.filters.update(minutes=minutes, display_answer=display_answer, utc_time=utc_time)
@@ -628,11 +633,17 @@ def create_app(
         mistakes = core.attempt_mistakes(attempt_id)
         ai = core.ai_status()
         ai_allowed = session_id is None and core.ai_allowed_for(attempt_id)
+        chat = core.chat_messages(attempt_id) if ai_allowed else []
+        speak = request.session.pop("speak_next", None)
         return render(
             request,
             "attempt.html",
             ai=ai,
             ai_allowed=ai_allowed,
+            chat=chat,
+            chat_enabled=ai_allowed and ai.available and core.can_chat(attempt_id),
+            speech_on=ai_allowed and ai.speech_available,
+            autoplay_url=speak if isinstance(speak, str) and ai_allowed else None,
             ai_hint_level=core.ai_hint_level(attempt_id) if ai_allowed else None,
             ai_explanation=core.ai_explanation(attempt_id) if ai_allowed else None,
             ai_mistake=core.ai_mistake_note(mistakes[0].id) if ai_allowed and mistakes else None,
@@ -707,7 +718,8 @@ def create_app(
         require_login(request)
         await check_csrf(request)
         try:
-            await run_in_threadpool(core.ai_hint, attempt_id)
+            made = await run_in_threadpool(core.ai_hint, attempt_id)
+            request.session["speak_next"] = f"/speech/hint/{attempt_id}/{made.level}"
         except AppError as e:
             flash(request, str(e), "warning")
         return redirect(f"/attempts/{attempt_id}#hints")
@@ -717,10 +729,74 @@ def create_app(
         require_login(request)
         await check_csrf(request)
         try:
-            await run_in_threadpool(core.ai_explain, attempt_id)
+            note = await run_in_threadpool(core.ai_explain, attempt_id)
+            request.session["speak_next"] = f"/speech/note/{note.id}"
         except AppError as e:
             flash(request, str(e), "warning")
         return redirect(f"/attempts/{attempt_id}#ai")
+
+    # ── разговор с репетитором и голос (Phase 6.5, ADR-0018) ──
+
+    @app.post("/attempts/{attempt_id}/ask")
+    async def ask_tutor(request: Request, attempt_id: int, question: Annotated[str, Form()] = ""):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            reply = await run_in_threadpool(core.ask_tutor, attempt_id, question)
+            request.session["speak_next"] = f"/speech/chat/{reply.id}"
+        except AppError as e:
+            flash(request, str(e), "warning")
+        return redirect(f"/attempts/{attempt_id}#tutor")
+
+    @app.post("/attempts/{attempt_id}/listen")
+    async def listen(request: Request, attempt_id: int):
+        """Вопрос голосом: браузер присылает запись (16-битный PCM), в ответ — текст."""
+        require_login(request)
+        await check_csrf(request)
+        form = await request.form()
+        audio = form.get("audio")
+        rate = str(form.get("rate", ""))
+        if audio is None or isinstance(audio, str) or not rate.isdigit():
+            return JSONResponse({"error": "запись не пришла"}, status_code=400)
+        pcm = await audio.read(MAX_RECORDING_BYTES + 1)
+        if len(pcm) > MAX_RECORDING_BYTES:
+            return JSONResponse({"error": "запись слишком длинная"}, status_code=400)
+        try:
+            text = await run_in_threadpool(core.listen, attempt_id, pcm, int(rate))
+        except AppError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"text": text})
+
+    async def speech_reply(request: Request, make: Any, *args: int) -> JSONResponse:
+        require_login(request)
+        await check_csrf(request)
+        try:
+            clip = await run_in_threadpool(make, *args)
+        except AppError as e:
+            return JSONResponse({"error": str(e)}, status_code=400)
+        return JSONResponse({"url": f"/speech/clips/{clip.name}"})
+
+    @app.post("/speech/note/{note_id}")
+    async def speak_note(request: Request, note_id: int):
+        return await speech_reply(request, core.speak_note, note_id)
+
+    @app.post("/speech/chat/{message_id}")
+    async def speak_chat(request: Request, message_id: int):
+        return await speech_reply(request, core.speak_chat, message_id)
+
+    @app.post("/speech/hint/{attempt_id}/{level}")
+    async def speak_hint(request: Request, attempt_id: int, level: int):
+        return await speech_reply(request, core.speak_hint, attempt_id, level)
+
+    @app.get("/speech/clips/{name}")
+    def speech_clip(request: Request, name: str):
+        require_login(request)
+        path = core.speech_clip_path(name)
+        if path is None:
+            return JSONResponse({"error": "звук не найден"}, status_code=404)
+        return FileResponse(
+            path, media_type="audio/mpeg", headers={"Cache-Control": "private, max-age=86400"}
+        )
 
     @app.post("/mistakes/{mistake_id}/ai")
     async def ai_mistake(

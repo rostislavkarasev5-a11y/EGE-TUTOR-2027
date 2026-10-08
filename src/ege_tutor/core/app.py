@@ -10,7 +10,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 from ege_tutor import __version__
-from ege_tutor.ai import make_ai
+from ege_tutor.ai import DisabledSpeechService, make_ai, make_speech
 from ege_tutor.config import Settings, load_settings
 from ege_tutor.core.clock import SystemClock
 from ege_tutor.core.domain import (
@@ -20,6 +20,8 @@ from ege_tutor.core.domain import (
     Attempt,
     AttemptMode,
     Catalog,
+    ChatMessage,
+    ChatRole,
     CodeRun,
     DiagnosticItemResult,
     DiagnosticSession,
@@ -44,7 +46,14 @@ from ege_tutor.core.domain import (
     Topic,
 )
 from ege_tutor.core.errors import AppError
-from ege_tutor.core.ports import AIService, Clock, Repository, RepositoryError, Sandbox
+from ege_tutor.core.ports import (
+    AIService,
+    Clock,
+    Repository,
+    RepositoryError,
+    Sandbox,
+    SpeechService,
+)
 from ege_tutor.core.services.assistant import AIHint, AssistantService, GeneratedTask
 from ege_tutor.core.services.catalog import load_catalog
 from ege_tutor.core.services.code import CodeService
@@ -52,6 +61,7 @@ from ege_tutor.core.services.content_import import build_report
 from ege_tutor.core.services.diagnostics import DiagnosticsService
 from ege_tutor.core.services.mastery import Calibration, MasteryService
 from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
+from ege_tutor.core.services.voice import SpeechClip, VoiceService, speakable
 from ege_tutor.sandbox import make_sandbox
 from ege_tutor.subjects import tutor_for
 
@@ -106,6 +116,7 @@ class TutorApp:
         sandbox: Sandbox,
         repository: Repository,
         catalog: Catalog,
+        speech: SpeechService | None = None,
     ) -> None:
         self.settings = settings
         self.clock = clock
@@ -131,6 +142,15 @@ class TutorApp:
             settings.app.sandbox,
             settings.mastery.independence.for_hint_level,
             self.asset_root,
+            speech,
+        )
+        self.voice = VoiceService(
+            repository,
+            clock,
+            speech or DisabledSpeechService(),
+            settings.app.speech,
+            self.assistant.status,
+            settings.data_dir / "speech_cache",
         )
 
     @classmethod
@@ -141,6 +161,7 @@ class TutorApp:
         repository: Repository | None = None,
         sandbox: Sandbox | None = None,
         ai: AIService | None = None,
+        speech: SpeechService | None = None,
     ) -> "TutorApp":
         """Собрать приложение с реализациями по умолчанию для текущей фазы.
 
@@ -158,6 +179,7 @@ class TutorApp:
             settings=settings,
             clock=clock or SystemClock(),
             ai=ai or make_ai(settings.app.ai),
+            speech=speech or make_speech(settings.app.speech, settings.app.ai),
             sandbox=sandbox or make_sandbox(settings.app.sandbox),
             repository=repository,
             catalog=catalog,
@@ -564,3 +586,52 @@ class TutorApp:
 
     def why_cannot_generate(self, task: Task) -> str | None:
         return self.assistant.why_cannot_generate(task)
+
+    # ── разговор с репетитором и голос (Phase 6.5, ADR-0018) ────────────────
+
+    def chat_messages(self, attempt_id: int) -> list[ChatMessage]:
+        return self.assistant.chat_messages(attempt_id)
+
+    def can_chat(self, attempt_id: int) -> bool:
+        """Можно ли сейчас спросить репетитора в этой попытке."""
+        return (
+            self.assistant.can_chat(self.attempt(attempt_id)) and self.assistant.status().available
+        )
+
+    def ask_tutor(self, attempt_id: int, question: str) -> ChatMessage:
+        return self.assistant.ask(attempt_id, question)
+
+    def listen(self, attempt_id: int, pcm: bytes, sample_rate: int) -> str:
+        """Распознать вопрос, заданный голосом (текст ученик проверяет и отправляет сам)."""
+        return self.voice.listen(attempt_id, pcm, sample_rate)
+
+    def speak_note(self, note_id: int) -> SpeechClip:
+        """Озвучить ответ ИИ: подсказку, объяснение или разбор ошибки."""
+        note = self.repository.get_ai_note(note_id)
+        if note is None:
+            raise AppError(f"ответ ИИ №{note_id} не найден")
+        return self.voice.speak(
+            speakable(note.text), attempt_id=note.attempt_id, task_id=note.task_id
+        )
+
+    def speak_chat(self, message_id: int) -> SpeechClip:
+        """Озвучить реплику репетитора."""
+        message = self.repository.get_chat_message(message_id)
+        if message is None or message.role != ChatRole.TUTOR:
+            raise AppError(f"реплика №{message_id} не найдена")
+        return self.voice.speak(
+            message.speech or speakable(message.text), attempt_id=message.attempt_id
+        )
+
+    def speak_hint(self, attempt_id: int, level: int) -> SpeechClip:
+        """Озвучить уже показанную подсказку попытки."""
+        attempt = self.attempt(attempt_id)
+        for hint in self.shown_hints(attempt_id):
+            if hint.level == level and hint.text:
+                return self.voice.speak(
+                    speakable(hint.text), attempt_id=attempt.id, task_id=attempt.task_id
+                )
+        raise AppError("эта подсказка ещё не открыта")
+
+    def speech_clip_path(self, name: str) -> Path | None:
+        return self.voice.clip_path(name)

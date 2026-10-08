@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import statement, answer_block, csrf_field, reclassify_form, ai_label with context %}
+{% from "macros.html" import statement, answer_block, csrf_field, reclassify_form, ai_label, listen with context %}
 {% macro code_block() %}
 <div id="code" class="code-box">
   <h3>Программа на Python</h3>
@@ -45,6 +45,7 @@
   <div class="ai-box">
     <p>{{ ai_label() }} ИИ считает, что причина — <strong>{{ MISTAKE_CATEGORY_NAMES[ai_mistake.category] }}</strong>
       <span class="meta">(уверенность {{ (ai_mistake.confidence * 100)|round|int }}%)</span>: {{ ai_mistake.text }}</p>
+    {% if speech_on %}{{ listen("/speech/note/" ~ ai_mistake.id) }}{% endif %}
     {% if ai_mistake.category != mistakes[0].category %}
     <form method="post" action="/mistakes/{{ mistakes[0].id }}" class="row compact">
       {{ csrf_field() }}
@@ -65,7 +66,51 @@
 </div>
 {% endif %}
 {% endmacro %}
+{% macro tutor_box() %}
+<section class="card tutor" id="tutor" aria-label="Репетитор">
+  <div class="tutor-head">
+    <h2>Репетитор {{ ai_label() }}</h2>
+    {% if speech_on %}
+    <label class="switch"><input type="checkbox" id="autoplay"> Читать ответы вслух</label>
+    {% endif %}
+  </div>
+  {% if chat %}
+  <div class="chat">
+    {% for m in chat %}
+    <div class="msg {{ m.role.value|lower }}">
+      <div class="statement">{{ m.text }}</div>
+      {% if m.role.value == "TUTOR" and speech_on %}{{ listen("/speech/chat/" ~ m.id) }}{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  {% if attempt.status == AttemptStatus.IN_PROGRESS %}
+  <p class="meta">Спроси своими словами, что непонятно в задаче. Ответ задачи репетитор не скажет.
+    {% if not attempt.max_hint_level %}Первый вопрос до ответа засчитывается как подсказка уровня 1.{% endif %}</p>
+  {% else %}
+  <p class="meta">Спроси, что осталось непонятным в решении.</p>
+  {% endif %}
+  {% endif %}
+  {% if chat_enabled %}
+  <form method="post" action="/attempts/{{ attempt.id }}/ask" class="ask">
+    {{ csrf_field() }}
+    <label class="sr-only" for="question">Вопрос репетитору</label>
+    <textarea name="question" id="question" rows="2" maxlength="1000" required
+      placeholder="Например: почему здесь нужен логарифм?"></textarea>
+    <div class="row">
+      {% if speech_on %}
+      <button type="button" class="secondary mic" id="mic" data-listen="/attempts/{{ attempt.id }}/listen"
+        data-max="{{ speech_max_seconds }}">Сказать голосом</button>
+      {% endif %}
+      <button type="submit">Спросить</button>
+    </div>
+    <p class="meta" id="mic-status" aria-live="polite"></p>
+  </form>
+  {% endif %}
+</section>
+{% endmacro %}
 {% block content %}
+{% if autoplay_url %}<span hidden data-autoplay="{{ autoplay_url }}"></span>{% endif %}
 {% if diagnostic %}
 <p class="flash info">Диагностика · задача {{ diagnostic.tasks_done + 1 }} (не больше {{ diagnostic.max_tasks }}) ·
   без подсказок, ответ даётся один раз.</p>
@@ -152,6 +197,7 @@
     <div id="ai" class="ai-box">
       <h3>Объяснение {{ ai_label() }}</h3>
       <div class="statement">{{ ai_explanation.text }}</div>
+      {% if speech_on %}{{ listen("/speech/note/" ~ ai_explanation.id) }}{% endif %}
       <p class="meta">ИИ может ошибаться: верный ответ — тот, что записан у задачи.</p>
     </div>
     {% elif ai_allowed and ai.available and attempt.status != AttemptStatus.ABANDONED %}
@@ -160,6 +206,7 @@
     {% endif %}
   {% endif %}
 </section>
+{% if chat_enabled or chat %}{{ tutor_box() }}{% endif %}
 </div>
 {% if show_side %}
 <aside class="split-side" id="hints" aria-label="Подсказки">
@@ -168,6 +215,7 @@
   <div class="hint{% if h.by_ai %} ai{% endif %}">
     <h3><span>Уровень {{ h.level }}: {{ HINT_NAMES[h.level] }}</span>{% if h.by_ai %} {{ ai_label() }}{% endif %}</h3>
     <div class="statement">{{ h.text }}</div>
+    {% if speech_on %}{{ listen("/speech/hint/" ~ attempt.id ~ "/" ~ h.level) }}{% endif %}
   </div>
   {% endfor %}
   {% if hints %}
@@ -180,4 +228,4 @@
 </div>
 {% if reveal and attempt.status != AttemptStatus.IN_PROGRESS %}{{ answer_block(task) }}{% endif %}
 {% endblock %}
-{% block scripts %}<script src="/static/timer.js"></script><script src="/static/code.js"></script>{% endblock %}
+{% block scripts %}<script src="/static/timer.js"></script><script src="/static/code.js"></script>{% if speech_on %}<script src="/static/voice.js"></script>{% endif %}{% endblock %}

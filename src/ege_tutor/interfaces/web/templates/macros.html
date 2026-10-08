@@ -67,3 +67,10 @@
 {% macro ai_label() -%}
 <span class="ai-label">{{ AI_LABEL }}</span>
 {%- endmacro %}
+
+{% macro listen(url, label="Слушать") -%}
+<button type="button" class="listen" data-speak="{{ url }}" aria-label="{{ label }} вслух">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4V5z"></path><path d="M15.5 8.5a5 5 0 0 1 0 7"></path><path d="M18.5 5.5a9 9 0 0 1 0 13"></path></svg>
+  <span>{{ label }}</span>
+</button>
+{%- endmacro %}

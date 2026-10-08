@@ -30,6 +30,8 @@ from ege_tutor.subjects import SubjectTutor
 
 SOLUTION_LEVEL = 4
 FINISHED = (AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP)
+# Подсказка без текста: уровень засчитан за вопрос репетитору (ADR-0018).
+CHAT_HINT_TEXT = "Засчитана за вопрос репетитору."
 # Режимы без подсказок: диагностика (ADR-0016). Правило обеспечивает CORE, а не интерфейс.
 NO_HINT_MODES = frozenset({AttemptMode.DIAGNOSTIC})
 
@@ -229,7 +231,7 @@ class PracticeService:
             shown.append(
                 ShownHint(
                     level=event.level,
-                    text=ai_texts[event.level] if by_ai else text or "",
+                    text=ai_texts[event.level] if by_ai else text or CHAT_HINT_TEXT,
                     independence=self._mastery.independence.for_hint_level(event.level),
                     by_ai=by_ai,
                 )

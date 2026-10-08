@@ -29,6 +29,7 @@ from ege_tutor.core.domain import (
     AnswerType,
     AttemptMode,
     AttemptStatus,
+    ChatRole,
     ClassifiedBy,
     CodeVerdict,
     DiagnosticStatus,
@@ -549,6 +550,21 @@ class AINoteRow(Base):
     hint_level: Mapped[int | None]
     category: Mapped[MistakeCategory | None] = mapped_column(_enum(MistakeCategory))
     confidence: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class ChatMessageRow(Base):
+    """Реплика разговора с репетитором (ADR-0018). Не удаляется, как и попытки."""
+
+    __tablename__ = "ai_chat_message"
+    __table_args__ = (Index("ix_ai_chat_message_attempt", "attempt_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"))
+    role: Mapped[ChatRole] = mapped_column(_enum(ChatRole))
+    text: Mapped[str] = mapped_column(Text)
+    speech: Mapped[str | None] = mapped_column(Text)
+    ai_call_id: Mapped[int | None] = mapped_column(ForeignKey("ai_call.id"))
     created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
 
 

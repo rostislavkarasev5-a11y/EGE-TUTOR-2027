@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ege_tutor.config import AIConfig
 from ege_tutor.core.domain import (
+    AIChatReply,
     AICriterionScore,
     AIError,
     AIMistakeSuggestion,
@@ -29,10 +30,11 @@ from ege_tutor.core.domain import (
     AIText,
     AIUsage,
     AnswerType,
+    ChatTurn,
     Subject,
 )
 
-PROMPT_VERSION = "prompts-v1"
+PROMPT_VERSION = "prompts-v2"
 _SUBJECT_NAMES = {Subject.MATH_PROFILE: "профильная математика", Subject.INFORMATICS: "информатика"}
 _ERROR_BODY_CHARS = 200
 
@@ -77,6 +79,11 @@ class _Criterion(_Schema):
 class _Part2(_Schema):
     criteria: Annotated[list[_Criterion], Field(min_length=1, max_length=10)]
     summary: ShortText
+
+
+class _Chat(_Schema):
+    text: ShortText
+    speech: ShortText
 
 
 class _Generated(_Schema):
@@ -357,3 +364,32 @@ class YandexAIService:
             parsed.check.strip(),
             usage,
         )
+
+    def chat(
+        self,
+        task: AITaskContext,
+        history: Sequence[ChatTurn],
+        question: str,
+        *,
+        finished: bool,
+    ) -> AIChatReply:
+        if finished:
+            rule = (
+                "Ученик уже закончил попытку: можно разбирать решение и называть ответ. "
+                "Опирайся на эталонный ответ: он проверен и верен."
+            )
+        else:
+            rule = (
+                "Ученик ещё решает. Главное правило: НЕ называй ответ, не доводи вычисления "
+                "до ответа и не решай задачу целиком. Помоги понять идею или следующий шаг."
+            )
+        lines = [f"{'Ученик' if t.from_student else 'Репетитор'}: {t.text}" for t in history]
+        user = _render(
+            "chat",
+            rule=rule,
+            task=task_block(task, with_answer=finished),
+            history="\n".join(lines) or "нет",
+            question=question,
+        )
+        parsed, usage = self._ask(user, _Chat)
+        return AIChatReply(parsed.text.strip(), parsed.speech.strip(), usage)
