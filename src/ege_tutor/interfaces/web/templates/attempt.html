@@ -70,6 +70,9 @@
 <p class="flash info">Диагностика · задача {{ diagnostic.tasks_done + 1 }} (не больше {{ diagnostic.max_tasks }}) ·
   без подсказок, ответ даётся один раз.</p>
 {% endif %}
+{% set show_side = hints or (attempt.status == AttemptStatus.IN_PROGRESS and not diagnostic) %}
+<div class="{% if show_side %}split{% endif %}">
+<div class="split-main">
 {{ statement(task) }}
 
 <section class="card">
@@ -82,17 +85,6 @@
   <p class="flash warning">Подсказки из прошлой попытки учтены (уровень {{ attempt.max_hint_level }}).</p>
   {% endif %}
 
-  {% if hints %}
-  <div id="hints">
-    {% for h in hints %}
-    <div class="hint{% if h.by_ai %} ai{% endif %}">
-      <h3>Уровень {{ h.level }}: {{ HINT_NAMES[h.level] }}{% if h.by_ai %} {{ ai_label() }}{% endif %}</h3>
-      <div class="statement">{{ h.text }}</div>
-    </div>
-    {% endfor %}
-    <p class="meta">Самостоятельность этой попытки теперь {{ hints[-1].independence }}.</p>
-  </div>
-  {% endif %}
 
   {% if attempt.status == AttemptStatus.IN_PROGRESS %}
   <form method="post" action="/attempts/{{ attempt.id }}/answer" class="row">
@@ -168,6 +160,24 @@
     {% endif %}
   {% endif %}
 </section>
+</div>
+{% if show_side %}
+<aside class="split-side" id="hints" aria-label="Подсказки">
+  <h2>Подсказки</h2>
+  {% for h in hints %}
+  <div class="hint{% if h.by_ai %} ai{% endif %}">
+    <h3><span>Уровень {{ h.level }}: {{ HINT_NAMES[h.level] }}</span>{% if h.by_ai %} {{ ai_label() }}{% endif %}</h3>
+    <div class="statement">{{ h.text }}</div>
+  </div>
+  {% endfor %}
+  {% if hints %}
+  <p class="meta">Самостоятельность этой попытки теперь {{ hints[-1].independence }}.</p>
+  {% else %}
+  <p class="meta">Пока без подсказок. Каждая подсказка снижает самостоятельность решения, ответ она не раскрывает.</p>
+  {% endif %}
+</aside>
+{% endif %}
+</div>
 {% if reveal and attempt.status != AttemptStatus.IN_PROGRESS %}{{ answer_block(task) }}{% endif %}
 {% endblock %}
 {% block scripts %}<script src="/static/timer.js"></script><script src="/static/code.js"></script>{% endblock %}

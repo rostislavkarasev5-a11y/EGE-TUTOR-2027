@@ -694,3 +694,21 @@ def test_ai_on_site(ai_client):
     assert "ИИ подключён" in overview.text
     assert "подсказка" in overview.text and "похожая задача" in overview.text
     assert 'style="' not in overview.text
+
+
+def test_design_uses_own_fonts_and_marks_current_page(client):
+    """Оформление «Ночной»: шрифты лежат на нашем сервере, текущий раздел выделен в меню."""
+    css = client.get("/static/style.css")
+    assert css.status_code == 200
+    fonts = re.findall(r'url\("(fonts/[^"]+\.woff2)"\)', css.text)
+    assert len(fonts) == 4
+    for font in fonts:
+        response = client.get(f"/static/{font}")
+        assert response.status_code == 200 and response.content[:4] == b"wOF2"
+    assert "https://" not in css.text  # ничего не грузится с чужих сайтов (CSP)
+    home = client.get("/").text
+    assert '<a href="/" class="active" aria-current="page">Главная</a>' in home
+    profile = client.get("/profile").text
+    assert '<a href="/profile" class="active"' in profile
+    assert '<a href="/">Главная</a>' in profile
+    assert 'style="' not in home
