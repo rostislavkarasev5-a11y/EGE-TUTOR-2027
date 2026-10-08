@@ -25,7 +25,7 @@
 | Pydantic, Typer, Rich, pytest, Hypothesis, Ruff | 0 |
 | SQLAlchemy 2, Alembic, PyYAML (ADR-0010) | 1 |
 | SymPy | 2 |
-| anthropic SDK | 6 |
+| ИИ: Yandex AI Studio без новых зависимостей (ADR-0017) | 6 |
 | FastAPI, uvicorn, Jinja2, python-multipart, argon2-cffi, itsdangerous (ADR-0013) | 12 (сразу после 2) |
 
 ## Открытые вопросы (не блокируют текущую фазу)

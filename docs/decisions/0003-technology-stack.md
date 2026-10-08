@@ -15,10 +15,10 @@
 | Математика | SymPy — только вспомогательная проверка выражений и ответов |
 | Тесты, стиль | pytest, Hypothesis, Ruff (lint + format) |
 | CI | GitHub Actions (Ubuntu + Windows) |
-| ИИ | anthropic SDK — только с Phase 6 |
+| ИИ | Yandex AI Studio через стандартную библиотеку — с Phase 6 (ADR-0017); anthropic SDK — по отдельному решению |
 | Web | FastAPI — только в будущих фазах |
 
-Зависимость добавляется в `pyproject.toml` в той фазе, где она реально используется: Phase 0 — Pydantic, Typer, Rich (+ dev: pytest, Hypothesis, Ruff); Phase 1 — SQLAlchemy, Alembic; Phase 2 — SymPy; Phase 6 — anthropic; Phase 12 — FastAPI.
+Зависимость добавляется в `pyproject.toml` в той фазе, где она реально используется: Phase 0 — Pydantic, Typer, Rich (+ dev: pytest, Hypothesis, Ruff); Phase 1 — SQLAlchemy, Alembic; Phase 2 — SymPy; Phase 6 — без новых зависимостей (ADR-0017); Phase 12 — FastAPI.
 
 ## Последствия
 
