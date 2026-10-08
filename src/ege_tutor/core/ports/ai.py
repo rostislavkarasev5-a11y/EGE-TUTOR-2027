@@ -2,11 +2,13 @@ from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 from ege_tutor.core.domain import (
+    AIChatReply,
     AIMistakeSuggestion,
     AIPart2Suggestion,
     AITaskContext,
     AITaskSuggestion,
     AIText,
+    ChatTurn,
 )
 
 
@@ -64,4 +66,19 @@ class AIService(Protocol):
 
     def generate_similar(self, task: AITaskContext) -> AITaskSuggestion:
         """Новая задача того же типа с ответом и способом проверки."""
+        ...
+
+    def chat(
+        self,
+        task: AITaskContext,
+        history: Sequence[ChatTurn],
+        question: str,
+        *,
+        finished: bool,
+    ) -> AIChatReply:
+        """Ответ на вопрос ученика о задаче (ADR-0018).
+
+        finished=False — попытка идёт: ответа задачи в запросе нет, и ИИ его не называет.
+        finished=True — попытка закончена: можно разбирать решение и ответ.
+        """
         ...

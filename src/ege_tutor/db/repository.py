@@ -22,6 +22,8 @@ from ege_tutor.core.domain import (
     AttemptMode,
     AttemptStatus,
     Catalog,
+    ChatMessage,
+    ChatRole,
     ClassifiedBy,
     CodeRun,
     CodeVerdict,
@@ -63,6 +65,7 @@ from ege_tutor.db.models import (
     AICallRow,
     AINoteRow,
     AttemptRow,
+    ChatMessageRow,
     CodeRunRow,
     DiagnosticAttemptRow,
     DiagnosticResultRow,
@@ -1258,6 +1261,62 @@ class SqlRepository:
             query = query.where(AINoteRow.purpose == purpose)
         with self._session() as s:
             return [self._ai_note(row) for row in s.scalars(query)]
+
+    def get_ai_note(self, note_id: int) -> AINote | None:
+        with self._session() as s:
+            row = s.get(AINoteRow, note_id)
+            return None if row is None else self._ai_note(row)
+
+    # ── разговор с репетитором (Phase 6.5) ───────────────────────────────────
+
+    @staticmethod
+    def _chat_message(row: ChatMessageRow) -> ChatMessage:
+        return ChatMessage(
+            id=row.id,
+            attempt_id=row.attempt_id,
+            role=row.role,
+            text=row.text,
+            created_at=row.created_at,
+            speech=row.speech,
+            ai_call_id=row.ai_call_id,
+        )
+
+    def add_chat_message(
+        self,
+        *,
+        attempt_id: int,
+        role: ChatRole,
+        text: str,
+        at: dt.datetime,
+        speech: str | None = None,
+        ai_call_id: int | None = None,
+    ) -> ChatMessage:
+        with self._session.begin() as s:
+            row = ChatMessageRow(
+                attempt_id=attempt_id,
+                role=role,
+                text=text,
+                speech=speech,
+                ai_call_id=ai_call_id,
+                created_at=at,
+            )
+            s.add(row)
+            s.flush()
+            return self._chat_message(row)
+
+    def list_chat_messages(self, attempt_id: int) -> list[ChatMessage]:
+        query = (
+            select(ChatMessageRow)
+            .where(ChatMessageRow.attempt_id == attempt_id)
+            .order_by(ChatMessageRow.created_at, ChatMessageRow.id)
+        )
+        with self._session() as s:
+            return [self._chat_message(row) for row in s.scalars(query)]
+
+    def get_chat_message(self, message_id: int) -> ChatMessage | None:
+        with self._session() as s:
+            row = s.get(ChatMessageRow, message_id)
+            return None if row is None else self._chat_message(row)
 
     @staticmethod
     def _part2_grade(row: Part2GradeRow) -> Part2Grade:

@@ -38,6 +38,26 @@ max_output_tokens = 1500
 timeout_seconds = 60
 temperature = 0.3
 
+[speech]
+# Голос репетитора (Phase 6.5, ADR-0018): озвучка ответов ИИ и распознавание вопросов голосом.
+# Yandex SpeechKit, тот же ключ, что и у ИИ (нужны роли ai.speechkit-tts.user и
+# ai.speechkit-stt.user). Работает, только когда ИИ включён; траты входят в тот же лимит.
+enabled = true
+# Голоса: marina, jane, omazh (женские), filipp, ermil, zahar (мужские) и другие — см. список
+# голосов SpeechKit. role — характер голоса (у marina: neutral, friendly, whisper).
+voice = "marina"
+role = "friendly"
+speed = 1.0
+tts_url = "https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis"
+stt_url = "https://stt.api.cloud.yandex.net/speech/v1/stt:recognize"
+# Цены с НДС по прайсу Yandex Cloud на 2026-10-08.
+price_tts_per_request_rub = 0.1626
+chars_per_request = 250
+max_tts_chars = 3000
+price_stt_per_15s_rub = 0.1626
+max_recording_seconds = 30
+timeout_seconds = 60
+
 [sandbox]
 # Python Sandbox появится в Phase 3 (ADR-0008).
 # Основной вариант на Windows — Docker Desktop, запасной — WSL2.

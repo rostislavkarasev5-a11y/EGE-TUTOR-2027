@@ -43,6 +43,7 @@ sudo bash install.sh --domain my.site.ru  # или свой домен (A-зап
 | Копия базы | сама: `ege-tutor-backup.timer` в 03:30, хранится 14 копий; на сайте — «Скачать копию базы» |
 | Сменить пароль | `sudo bash /opt/ege-tutor/deploy/set-password.sh` (все сессии выходят) |
 | Подключить ИИ | `sudo bash /opt/ege-tutor/deploy/set-ai-key.sh` — каталог, ключ (скрыто), лимит трат |
+| Голос репетитора | тот же ключ; у сервисного аккаунта роли `ai.speechkit-tts.user` и `ai.speechkit-stt.user`, у ключа области `yc.ai.languageModels.execute`, `yc.ai.speechkitTts.execute`, `yc.ai.speechkitStt.execute` (ADR-0018) |
 | Выключить ИИ | `sudo bash /opt/ege-tutor/deploy/set-ai-key.sh --off` (ключ удаляется с сервера) |
 | Журнал | `journalctl -u ege-tutor-update` · `docker compose ... logs app` |
 

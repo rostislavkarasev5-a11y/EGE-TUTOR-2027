@@ -16,6 +16,7 @@ from ege_tutor.core.ports.sandbox import (
     SandboxUnavailableError,
     SandboxVerdict,
 )
+from ege_tutor.core.ports.speech import SpeechService
 
 __all__ = [
     "AIService",
@@ -28,4 +29,5 @@ __all__ = [
     "SandboxLimits",
     "SandboxUnavailableError",
     "SandboxVerdict",
+    "SpeechService",
 ]

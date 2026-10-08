@@ -1,15 +1,32 @@
 """Адаптер Yandex AI Studio на поддельном HTTP-сервере: без интернета и без денег (ADR-0017)."""
 
+import base64
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from ege_tutor.ai import API_KEY_ENV, FOLDER_ENV, DisabledAIService, YandexAIService, make_ai
+from ege_tutor.ai import (
+    API_KEY_ENV,
+    FOLDER_ENV,
+    DisabledAIService,
+    DisabledSpeechService,
+    YandexAIService,
+    YandexSpeechService,
+    make_ai,
+    make_speech,
+)
 from ege_tutor.config import ConfigError, load_settings
-from ege_tutor.core.domain import AIError, AITaskContext, AnswerType, Subject
-from ege_tutor.core.ports import AIService
+from ege_tutor.core.domain import (
+    AIError,
+    AITaskContext,
+    AnswerType,
+    ChatTurn,
+    SpeechError,
+    Subject,
+)
+from ege_tutor.core.ports import AIService, SpeechService
 
 # Поддельный ключ собирается во время выполнения: в файле нет строки, похожей на секрет.
 FAKE_KEY = "test-" + "key-" + "0" * 8
@@ -26,10 +43,11 @@ TASK = AITaskContext(
 
 
 class _Server:
-    """Отвечает заданным кодом и телом, запоминает запросы."""
+    """Отвечает заданным кодом и телом, запоминает запросы (и путь с параметрами)."""
 
     def __init__(self) -> None:
         self.requests: list[tuple[dict[str, str], dict]] = []
+        self.raw: list[tuple[str, bytes]] = []
         self.status = 200
         self.body: dict | str = {}
         outer = self
@@ -37,7 +55,12 @@ class _Server:
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
                 length = int(self.headers["Content-Length"])
-                data = json.loads(self.rfile.read(length))
+                raw_body = self.rfile.read(length)
+                outer.raw.append((self.path, raw_body))
+                try:
+                    data = json.loads(raw_body)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    data = {}
                 outer.requests.append(({k.lower(): v for k, v in self.headers.items()}, data))
                 raw = outer.body if isinstance(outer.body, str) else json.dumps(outer.body)
                 payload = raw.encode("utf-8")
@@ -218,3 +241,99 @@ def test_cost_uses_configured_prices():
     assert ai.cost_rub(1000, 1000) == pytest.approx(
         ai.price_input_per_1000_rub + ai.price_output_per_1000_rub
     )
+
+
+# ── разговор с репетитором (ADR-0018) ──────────────────────────────────────
+
+
+def test_chat_hides_answer_while_solving(server, service):
+    server.reply('{"text": "Запиши 8 как 2^3.", "speech": "Запиши восемь как два в кубе."}')
+    history = [ChatTurn(True, "с чего начать?"), ChatTurn(False, "С основания.")]
+    reply = service.chat(TASK, history, "а дальше?", finished=False)
+    assert (reply.text, reply.speech) == ("Запиши 8 как 2^3.", "Запиши восемь как два в кубе.")
+    user = server.requests[0][1]["messages"][1]["content"]
+    assert "Эталонный ответ" not in user and "НЕ называй ответ" in user
+    assert "Ученик: с чего начать?" in user and "Репетитор: С основания." in user
+    server.reply('{"text": "Ответ 3.", "speech": "Ответ три."}')
+    service.chat(TASK, [], "почему 3?", finished=True)
+    assert "Эталонный ответ: 3" in server.requests[1][1]["messages"][1]["content"]
+
+
+def test_chat_needs_both_fields(server, service):
+    server.reply('{"text": "без озвучки"}')
+    with pytest.raises(AIError, match="не по формату"):
+        service.chat(TASK, [], "вопрос", finished=False)
+
+
+# ── SpeechKit ──────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def speech(server):
+    config = load_settings().app.speech
+    return YandexSpeechService(
+        config, FAKE_KEY, tts_url=server.url + "/tts", stt_url=server.url + "/stt"
+    )
+
+
+def test_tts_request_and_streamed_audio(server, speech):
+    chunks = [base64.b64encode(b"ID3-part1").decode(), base64.b64encode(b"-part2").decode()]
+    server.body = "\n".join(
+        json.dumps({"result": {"audioChunk": {"data": c}, "lengthMs": "100"}}) for c in chunks
+    )
+    assert speech.synthesize("Привет") == b"ID3-part1-part2"
+    [(headers, body)] = server.requests
+    assert headers["authorization"] == f"Api-Key {FAKE_KEY}"
+    assert headers["x-data-logging-enabled"] == "false"
+    assert body["text"] == "Привет" and body["unsafeMode"] is True
+    assert {"voice": "marina"} in body["hints"]
+    assert body["outputAudioSpec"]["containerAudio"]["containerAudioType"] == "MP3"
+    assert FAKE_KEY not in repr(speech)
+
+
+@pytest.mark.parametrize("body", ["", "не json", '{"result": {}}'])
+def test_tts_bad_answer(server, speech, body):
+    server.body = body
+    with pytest.raises(SpeechError):
+        speech.synthesize("Привет")
+
+
+def test_stt_request(server, speech):
+    server.body = {"result": " почему логарифм "}
+    pcm = b"\x01\x00" * 1600
+    assert speech.recognize(pcm, 16000) == "почему логарифм"
+    path, raw = server.raw[0]
+    assert raw == pcm
+    assert "format=lpcm" in path and "sampleRateHertz=16000" in path and "lang=ru-RU" in path
+
+
+def test_speechkit_rejects_key(server, speech):
+    server.status = 403
+    server.body = {"error_code": "PERMISSION_DENIED"}
+    with pytest.raises(SpeechError, match=r"ai\.speechkit-tts\.user") as info:
+        speech.recognize(b"\0\0", 16000)
+    assert FAKE_KEY not in str(info.value) and not info.value.billable
+
+
+def test_make_speech(ai_config):
+    config = load_settings().app.speech
+    off_ai = make_speech(config, load_settings().app.ai, {API_KEY_ENV: FAKE_KEY})
+    assert isinstance(off_ai, DisabledSpeechService) and "ИИ выключен" in (
+        off_ai.unavailable_reason or ""
+    )
+    no_key = make_speech(config, ai_config, {})
+    assert not no_key.is_available and API_KEY_ENV in (no_key.unavailable_reason or "")
+    disabled = make_speech(config.model_copy(update={"enabled": False}), ai_config, {})
+    assert not disabled.is_available
+    real = make_speech(config, ai_config, {API_KEY_ENV: FAKE_KEY})
+    assert isinstance(real, YandexSpeechService) and real.is_available
+    for service in (off_ai, no_key, disabled, real):
+        assert isinstance(service, SpeechService)
+
+
+def test_speech_costs():
+    config = load_settings().app.speech
+    assert config.tts_cost_rub(1) == pytest.approx(config.price_tts_per_request_rub)
+    assert config.tts_cost_rub(251) == pytest.approx(2 * config.price_tts_per_request_rub)
+    assert config.stt_cost_rub(15) == pytest.approx(config.price_stt_per_15s_rub)
+    assert config.stt_cost_rub(15.5) == pytest.approx(2 * config.price_stt_per_15s_rub)

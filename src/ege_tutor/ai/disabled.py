@@ -1,12 +1,14 @@
 from collections.abc import Sequence
 
 from ege_tutor.core.domain import (
+    AIChatReply,
     AIError,
     AIMistakeSuggestion,
     AIPart2Suggestion,
     AITaskContext,
     AITaskSuggestion,
     AIText,
+    ChatTurn,
 )
 
 DEFAULT_REASON = "ИИ выключен в настройках"
@@ -63,4 +65,14 @@ class DisabledAIService:
         raise self._refuse()
 
     def generate_similar(self, task: AITaskContext) -> AITaskSuggestion:
+        raise self._refuse()
+
+    def chat(
+        self,
+        task: AITaskContext,
+        history: Sequence[ChatTurn],
+        question: str,
+        *,
+        finished: bool,
+    ) -> AIChatReply:
         raise self._refuse()

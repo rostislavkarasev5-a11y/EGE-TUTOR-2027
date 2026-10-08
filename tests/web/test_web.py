@@ -7,6 +7,7 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
+from ege_tutor.core.domain import Subject
 from ege_tutor.interfaces.web.app import create_app
 from ege_tutor.interfaces.web.auth import LoginThrottle, PasswordStore, web_dir
 from tests.conftest import REPO_ROOT
@@ -694,6 +695,107 @@ def test_ai_on_site(ai_client):
     assert "ИИ подключён" in overview.text
     assert "подсказка" in overview.text and "похожая задача" in overview.text
     assert 'style="' not in overview.text
+
+
+@pytest.fixture
+def voice_client(fixed_clock, write_file):
+    from ege_tutor.core.app import TutorApp
+    from tests.fakes import FakeAIService, FakeSpeechService
+
+    fake, speech = FakeAIService(), FakeSpeechService()
+    app = TutorApp.create(clock=fixed_clock, ai=fake, speech=speech)
+    app.import_tasks(write_file("ai.yaml", AI_TASKS))
+    passwords = PasswordStore(web_dir(app.settings.data_dir) / "password.argon2")
+    passwords.set(PASSWORD)
+    client = TestClient(create_app(app, password_store=passwords), base_url="https://testserver")
+    page = client.get("/login")
+    client.post("/login", data={"csrf": _csrf(page.text), "password": PASSWORD, "next": "/"})
+    yield client, app, fake, speech
+    app.close()
+
+
+def test_voice_tutor_on_site(voice_client):
+    """Разговор с репетитором, «Слушать» и вопрос голосом (ADR-0018)."""
+    client, app, fake, speech = voice_client
+    simple = min(t.id for t in app.tasks())
+    app.review_task(simple, answer_is_correct=True)
+    attempt_id = _start(client, simple)
+
+    page = client.get(f"/attempts/{attempt_id}")
+    assert 'id="tutor"' in page.text and "засчитывается как подсказка уровня 1" in page.text
+    assert 'id="mic"' in page.text and "/static/voice.js" in page.text
+    assert '<meta name="csrf-token"' in page.text
+    assert 'style="' not in page.text
+
+    asked = post(client, f"/attempts/{attempt_id}/ask", {"question": "с чего начать?"})
+    assert "с чего начать?" in asked.text and fake.chat_text in asked.text
+    assert app.attempt(int(attempt_id)).max_hint_level == 1
+    [message] = [m for m in app.chat_messages(int(attempt_id)) if m.role.value == "TUTOR"]
+    speak_url = f"/speech/chat/{message.id}"
+    assert f'data-autoplay="{speak_url}"' in asked.text  # ответ прозвучит сам, если включено
+    assert f'data-speak="{speak_url}"' in asked.text
+    assert "data-autoplay" not in client.get(f"/attempts/{attempt_id}").text  # только один раз
+
+    token = _csrf(client.get("/profile").text)
+    clip = client.post(speak_url, data={"csrf": token}).json()["url"]
+    audio = client.get(clip)
+    assert audio.status_code == 200 and audio.headers["content-type"] == "audio/mpeg"
+    assert audio.content.startswith(b"ID3")
+    assert client.post(speak_url, data={"csrf": token}).json()["url"] == clip
+    assert speech.spoken == [message.speech]  # второй раз — из кэша
+    assert client.get("/speech/clips/" + "0" * 32 + ".mp3").status_code == 404
+    assert client.post(speak_url, data={}).status_code == 400  # без CSRF-токена
+
+    recording = b"\0" * (16_000 * 2 * 2)
+    heard = client.post(
+        f"/attempts/{attempt_id}/listen",
+        data={"csrf": token, "rate": "16000"},
+        files={"audio": ("audio.pcm", recording, "application/octet-stream")},
+    )
+    assert heard.json() == {"text": speech.transcript}
+    short = client.post(
+        f"/attempts/{attempt_id}/listen",
+        data={"csrf": token, "rate": "16000"},
+        files={"audio": ("audio.pcm", b"\0\0", "application/octet-stream")},
+    )
+    assert short.status_code == 400 and "короткая" in short.json()["error"]
+    missing = client.post(f"/attempts/{attempt_id}/listen", data={"csrf": token})
+    assert missing.status_code == 400
+
+    overview = client.get("/ai").text
+    assert "вопрос репетитору" in overview and "озвучка" in overview
+    assert "распознавание голоса" in overview
+
+
+def test_no_tutor_without_ai(client):
+    _import_sample(client)
+    _review_all(client)
+    task_id = re.search(r'href="/tasks/(\d+)"', client.get("/tasks").text).group(1)
+    attempt_id = _start(client, int(task_id))
+    page = client.get(f"/attempts/{attempt_id}").text
+    assert 'id="tutor"' not in page and "voice.js" not in page
+    refused = post(client, f"/attempts/{attempt_id}/ask", {"question": "подскажи"})
+    assert "недоступ" in refused.text
+
+
+def test_no_tutor_in_diagnostic(voice_client):
+    client, app, fake, speech = voice_client
+    app.install_starter_bank()
+    session = app.start_diagnostic(Subject.MATH_PROFILE)
+    step = app.diagnostic_step(session.id)
+    assert step.attempt is not None
+    page = client.get(f"/attempts/{step.attempt.id}").text
+    assert 'id="tutor"' not in page and 'id="mic"' not in page
+    refused = post(client, f"/attempts/{step.attempt.id}/ask", {"question": "подскажи"})
+    assert "диагностике" in refused.text
+    token = _csrf(client.get("/profile").text)
+    heard = client.post(
+        f"/attempts/{step.attempt.id}/listen",
+        data={"csrf": token, "rate": "16000"},
+        files={"audio": ("audio.pcm", b"\0" * 64_000, "application/octet-stream")},
+    )
+    assert heard.status_code == 400 and "диагностике" in heard.json()["error"]
+    assert fake.chat_requests == [] and speech.heard == []
 
 
 def test_design_uses_own_fonts_and_marks_current_page(client):

@@ -9,7 +9,10 @@ Phase 6, архитектура раздел 8, ADR-0017. Правила, кот
   лимита ИИ выключается до следующего месяца;
 - подсказка, раскрывающая ответ, отклоняется; объяснение — только после попытки;
 - похожая задача сохраняется как AI_GENERATED и выдаётся, только если её ответ сошёлся
-  с независимой проверкой (выражение — SymPy, программа — песочница).
+  с независимой проверкой (выражение — SymPy, программа — песочница);
+- разговор с репетитором (Phase 6.5, ADR-0018): пока попытка идёт, ответ задачи в ИИ не
+  уходит, а реплика, которая его называет, заменяется отказом; первый вопрос до ответа
+  засчитывается как подсказка уровня 1.
 """
 
 import datetime as dt
@@ -34,6 +37,9 @@ from ege_tutor.core.domain import (
     AttemptMode,
     AttemptStatus,
     Catalog,
+    ChatMessage,
+    ChatRole,
+    ChatTurn,
     ImportBatch,
     MistakeCategory,
     Part2Grade,
@@ -55,6 +61,7 @@ from ege_tutor.core.ports import (
     SandboxLimits,
     SandboxUnavailableError,
     SandboxVerdict,
+    SpeechService,
 )
 from ege_tutor.core.services.code import outputs_match
 from ege_tutor.core.services.content_import import content_hash
@@ -68,6 +75,10 @@ MAX_AI_HINT_LEVEL = 3
 MIN_SOLUTION_CHARS = 20
 MAX_SOLUTION_CHARS = 10_000
 FINISHED = (AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP)
+MAX_QUESTION_CHARS = 1000
+CHAT_HISTORY_TURNS = 10
+CHAT_HINT_LEVEL = 1  # первый вопрос до ответа = подсказка уровня 1 (ADR-0018)
+CHAT_REFUSAL = "Ответ я не скажу, но могу подсказать, с чего начать. Спроси, что именно непонятно."
 
 
 def month_start(now: dt.datetime) -> dt.datetime:
@@ -131,6 +142,7 @@ class AssistantService:
         sandbox_config: SandboxConfig,
         independence_for_level: Callable[[int], float],
         asset_root: Path,
+        speech: SpeechService | None = None,
     ) -> None:
         self._repo = repository
         self._clock = clock
@@ -142,6 +154,7 @@ class AssistantService:
         self._sandbox_config = sandbox_config
         self._independence = independence_for_level
         self._asset_root = asset_root
+        self._speech = speech
 
     # ── состояние и бюджет ──────────────────────────────────────────────────
 
@@ -154,6 +167,12 @@ class AssistantService:
                 f"месячный лимит трат на ИИ исчерпан ({spent:.2f} из {budget:.2f} ₽). "
                 "ИИ включится 1-го числа; всё остальное работает"
             )
+        if self._speech is None:
+            speech_reason: str | None = "голос не настроен"
+        elif not self._speech.is_available:
+            speech_reason = self._speech.unavailable_reason
+        else:
+            speech_reason = reason
         return AIStatus(
             available=reason is None,
             reason=reason,
@@ -162,6 +181,9 @@ class AssistantService:
             month_spent_rub=spent,
             monthly_budget_rub=budget,
             month_calls=calls,
+            speech_available=speech_reason is None,
+            speech_reason=speech_reason,
+            voice=self._speech.voice if self._speech is not None else None,
         )
 
     def _require_available(self) -> None:
@@ -412,6 +434,75 @@ class AssistantService:
             mistake_id=mistake.id,
             category=category,
             confidence=min(1.0, max(0.0, reply.confidence)),
+        )
+
+    # ── разговор с репетитором (Phase 6.5, ADR-0018) ────────────────────────
+
+    def chat_messages(self, attempt_id: int) -> list[ChatMessage]:
+        return self._repo.list_chat_messages(attempt_id)
+
+    def can_chat(self, attempt: Attempt) -> bool:
+        return attempt.mode not in AI_FORBIDDEN_MODES and attempt.status != AttemptStatus.ABANDONED
+
+    def ask(self, attempt_id: int, question: str) -> ChatMessage:
+        """Ответ репетитора на вопрос ученика. Возвращает реплику репетитора.
+
+        Пока попытка идёт, ответа задачи ИИ не знает, а реплика, которая его всё же называет,
+        заменяется отказом. Первый принятый вопрос до ответа засчитывается как подсказка
+        уровня 1: иначе с репетитором можно решить задачу «самостоятельно».
+        """
+        attempt = self._attempt(attempt_id)
+        if attempt.status == AttemptStatus.ABANDONED:
+            raise AppError("попытка брошена: начни задачу заново, чтобы спросить репетитора")
+        text = " ".join(question.split())
+        if not text:
+            raise AppError("напиши вопрос")
+        if len(text) > MAX_QUESTION_CHARS:
+            raise AppError(f"вопрос длиннее {MAX_QUESTION_CHARS} символов: спроси короче")
+        task = self._task(attempt.task_id)
+        self._require_available()
+        finished = attempt.status in FINISHED
+        history = [
+            ChatTurn(m.role == ChatRole.STUDENT, m.text)
+            for m in self._repo.list_chat_messages(attempt.id)[-CHAT_HISTORY_TURNS:]
+        ]
+        try:
+            reply = self._ai.chat(self.context(task), history, text, finished=finished)
+        except AIError as e:
+            raise self._failed(AIPurpose.CHAT, e, attempt.id, task.id) from e
+        now = self._clock.now()
+        self._repo.add_chat_message(attempt_id=attempt.id, role=ChatRole.STUDENT, text=text, at=now)
+        if not finished and (
+            reveals_answer(reply.text, task.answer) or reveals_answer(reply.speech, task.answer)
+        ):
+            call_id = self._record(
+                AIPurpose.CHAT,
+                AICallStatus.REJECTED,
+                reply.usage,
+                error="реплика раскрывала ответ задачи",
+                attempt_id=attempt.id,
+                task_id=task.id,
+            )
+            return self._repo.add_chat_message(
+                attempt_id=attempt.id,
+                role=ChatRole.TUTOR,
+                text=CHAT_REFUSAL,
+                speech=CHAT_REFUSAL,
+                at=now,
+                ai_call_id=call_id,
+            )
+        call_id = self._record(
+            AIPurpose.CHAT, AICallStatus.OK, reply.usage, attempt_id=attempt.id, task_id=task.id
+        )
+        if not finished and attempt.max_hint_level < CHAT_HINT_LEVEL:
+            self._repo.record_hint(attempt.id, CHAT_HINT_LEVEL, now)
+        return self._repo.add_chat_message(
+            attempt_id=attempt.id,
+            role=ChatRole.TUTOR,
+            text=reply.text,
+            speech=reply.speech,
+            at=now,
+            ai_call_id=call_id,
         )
 
     # ── часть 2 ─────────────────────────────────────────────────────────────

@@ -21,6 +21,9 @@ class AIPurpose(StrEnum):
     MISTAKE = "MISTAKE"  # предложение, к какой категории отнести ошибку
     PART2 = "PART2"  # предварительная оценка развёрнутого решения
     GENERATE = "GENERATE"  # похожая задача
+    CHAT = "CHAT"  # ответ на вопрос ученика (Phase 6.5, ADR-0018)
+    SPEECH = "SPEECH"  # озвучка текста (SpeechKit)
+    LISTEN = "LISTEN"  # распознавание вопроса, заданного голосом (SpeechKit)
 
 
 AI_PURPOSE_NAMES: dict[AIPurpose, str] = {
@@ -29,6 +32,9 @@ AI_PURPOSE_NAMES: dict[AIPurpose, str] = {
     AIPurpose.MISTAKE: "разбор ошибки",
     AIPurpose.PART2: "оценка части 2",
     AIPurpose.GENERATE: "похожая задача",
+    AIPurpose.CHAT: "вопрос репетитору",
+    AIPurpose.SPEECH: "озвучка",
+    AIPurpose.LISTEN: "распознавание голоса",
 }
 
 
@@ -112,6 +118,23 @@ class AITaskSuggestion:
     usage: AIUsage
 
 
+@dataclass(frozen=True)
+class AIChatReply:
+    """Ответ репетитора: text — для экрана, speech — тот же ответ для чтения вслух."""
+
+    text: str
+    speech: str
+    usage: AIUsage
+
+
+@dataclass(frozen=True)
+class ChatTurn:
+    """Реплика разговора, которую CORE передаёт ИИ как историю."""
+
+    from_student: bool
+    text: str
+
+
 class AIError(Exception):
     """ИИ не ответил или ответил не по формату. usage — если вызов всё равно стоил денег."""
 
@@ -157,6 +180,24 @@ class AINote:
     confidence: float | None = None
 
 
+class ChatRole(StrEnum):
+    STUDENT = "STUDENT"
+    TUTOR = "TUTOR"
+
+
+@dataclass(frozen=True)
+class ChatMessage:
+    """Реплика разговора с репетитором (ADR-0018). Хранится навсегда, как и попытки."""
+
+    id: int
+    attempt_id: int
+    role: ChatRole
+    text: str
+    created_at: dt.datetime
+    speech: str | None = None  # для чтения вслух (только у репетитора)
+    ai_call_id: int | None = None
+
+
 @dataclass(frozen=True)
 class Part2Grade:
     """Оценка развёрнутого решения. В Phase 6 — только предварительная оценка ИИ."""
@@ -184,3 +225,17 @@ class AIStatus:
     month_spent_rub: float
     monthly_budget_rub: float
     month_calls: int
+    speech_available: bool = False  # голос репетитора (ADR-0018)
+    speech_reason: str | None = None
+    voice: str | None = None
+
+
+# ── голос (Phase 6.5, ADR-0018) ─────────────────────────────────────────────
+
+
+class SpeechError(Exception):
+    """SpeechKit не ответил или ответил ошибкой. billable — стоил ли вызов денег."""
+
+    def __init__(self, message: str, *, billable: bool = False) -> None:
+        super().__init__(message)
+        self.billable = billable

@@ -14,6 +14,8 @@ from ege_tutor.core.domain import (
     AttemptMode,
     AttemptStatus,
     Catalog,
+    ChatMessage,
+    ChatRole,
     CodeRun,
     CodeVerdict,
     DiagnosticItemResult,
@@ -347,6 +349,27 @@ class Repository(Protocol):
     ) -> list[AINote]:
         """Принятые ответы ИИ по порядку записи."""
         ...
+
+    def get_ai_note(self, note_id: int) -> AINote | None: ...
+
+    # ── разговор с репетитором (Phase 6.5, ADR-0018) ──
+
+    def add_chat_message(
+        self,
+        *,
+        attempt_id: int,
+        role: ChatRole,
+        text: str,
+        at: dt.datetime,
+        speech: str | None = None,
+        ai_call_id: int | None = None,
+    ) -> ChatMessage: ...
+
+    def list_chat_messages(self, attempt_id: int) -> list[ChatMessage]:
+        """Реплики разговора по порядку."""
+        ...
+
+    def get_chat_message(self, message_id: int) -> ChatMessage | None: ...
 
     def add_part2_grade(
         self,

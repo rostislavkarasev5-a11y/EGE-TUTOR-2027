@@ -1214,6 +1214,12 @@ def ai_info(
         console.print(f"[green]ИИ подключён:[/] {status.provider}, модель {escape(status.model)}")
     else:
         console.print(f"[yellow]ИИ недоступен:[/] {escape(status.reason or '')}")
+    if status.speech_available:
+        console.print(f"[green]Голос репетитора подключён:[/] голос {escape(status.voice or '')}")
+    else:
+        console.print(
+            f"[yellow]Голос репетитора недоступен:[/] {escape(status.speech_reason or '')}"
+        )
     console.print(
         f"Потрачено в этом месяце: {status.month_spent_rub:.2f} ₽ "
         f"из {status.monthly_budget_rub:.2f} ₽ · обращений: {status.month_calls}"
@@ -1247,6 +1253,22 @@ def explain(attempt_id: Annotated[int, typer.Argument(help="Номер попы�
         tutor.close()
     console.print(_panel(Text(note.text), title=f"Объяснение · {AI_LABEL}", title_align="left"))
     console.print("[dim]ИИ может ошибаться: верный ответ — тот, что записан у задачи.[/]")
+
+
+@app.command()
+def ask(
+    attempt_id: Annotated[int, typer.Argument(help="Номер попытки.")],
+    question: Annotated[str, typer.Argument(help="Вопрос своими словами.")],
+) -> None:
+    """Спросить репетитора о задаче (ИИ). Ответ задачи, пока ты решаешь, он не скажет."""
+    tutor = _tutor()
+    try:
+        reply = tutor.ask_tutor(attempt_id, question)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    finally:
+        tutor.close()
+    console.print(_panel(Text(reply.text), title=f"Репетитор · {AI_LABEL}", title_align="left"))
 
 
 @app.command(name="ai-mistake")
