@@ -13,14 +13,22 @@ from ege_tutor.core.domain import (
     Attempt,
     AttemptMode,
     AttemptStatus,
+    CalendarEvent,
+    CalendarWindow,
     Catalog,
     ChatMessage,
     ChatRole,
     CodeRun,
     CodeVerdict,
+    ControlSession,
+    ControlStatus,
+    DailyCheckin,
+    DailyPlan,
     DiagnosticItemResult,
     DiagnosticSession,
     DiagnosticStatus,
+    DisciplineDay,
+    EventKind,
     ExamSpec,
     Forecast,
     HintEvent,
@@ -33,6 +41,8 @@ from ege_tutor.core.domain import (
     MistakePattern,
     Part2Grade,
     Part2GradeStatus,
+    PlanItem,
+    PlanItemStatus,
     Prediction,
     StopReason,
     StudentProfile,
@@ -391,3 +401,107 @@ class Repository(Protocol):
         ...
 
     def get_part2_grade(self, grade_id: int) -> Part2Grade | None: ...
+
+    # ── расписание, план, дисциплина, контрольная (Phase 7, ADR-0019) ──
+
+    def finished_attempts_between(self, start: dt.datetime, end: dt.datetime) -> list[Attempt]:
+        """Завершённые (ответ или «сдаюсь») попытки с finished_at в [start, end), по времени."""
+        ...
+
+    def list_windows(self) -> list[CalendarWindow]: ...
+
+    def add_window(self, weekday: int, start_minute: int, end_minute: int) -> CalendarWindow: ...
+
+    def delete_window(self, window_id: int) -> bool: ...
+
+    def list_events(self, start: dt.datetime, end: dt.datetime) -> list[CalendarEvent]:
+        """События (местное время), которые пересекаются с [start, end)."""
+        ...
+
+    def add_event(
+        self,
+        *,
+        kind: EventKind,
+        title: str,
+        starts_at: dt.datetime,
+        ends_at: dt.datetime,
+        blocks_study: bool,
+        at: dt.datetime,
+    ) -> CalendarEvent: ...
+
+    def delete_event(self, event_id: int) -> bool: ...
+
+    def get_checkin(self, day: dt.date) -> DailyCheckin | None: ...
+
+    def save_checkin(self, checkin: DailyCheckin, at: dt.datetime) -> None: ...
+
+    def get_plan(self, day: dt.date) -> DailyPlan | None:
+        """План дня с пунктами (выполнение не посчитано: done_tasks = 0)."""
+        ...
+
+    def save_plan(
+        self, day: dt.date, *, built_at: dt.datetime, budget_minutes: int, explanation: str
+    ) -> None: ...
+
+    def plan_items(self, day: dt.date) -> list[PlanItem]:
+        """Пункты дня по порядку, в том числе перенесённые на день без построенного плана."""
+        ...
+
+    def plan_items_between(self, start: dt.date, end: dt.date) -> list[PlanItem]:
+        """Пункты за дни [start, end]."""
+        ...
+
+    def get_plan_item(self, item_id: int) -> PlanItem | None: ...
+
+    def add_plan_items(self, items: Sequence[PlanItem], at: dt.datetime) -> list[PlanItem]:
+        """Добавить пункты (id и done_tasks игнорируются)."""
+        ...
+
+    def delete_plan_items(self, item_ids: Iterable[int]) -> None:
+        """Удалить пункты, которые ещё не начаты (используется при перестройке плана)."""
+        ...
+
+    def update_plan_item(
+        self,
+        item_id: int,
+        *,
+        status: PlanItemStatus | None = None,
+        note: str | None = None,
+        position: int | None = None,
+    ) -> PlanItem: ...
+
+    def unclosed_plan_days(self, before: dt.date) -> list[dt.date]:
+        """Дни раньше before с построенным планом, но без итога дисциплины."""
+        ...
+
+    def save_discipline_day(self, day: DisciplineDay, at: dt.datetime) -> None: ...
+
+    def list_discipline_days(self, start: dt.date, end: dt.date) -> list[DisciplineDay]: ...
+
+    def create_control_session(
+        self,
+        *,
+        subject: Subject,
+        exam_item: int,
+        task_ids: Sequence[int],
+        time_limit_seconds: int,
+        at: dt.datetime,
+    ) -> ControlSession: ...
+
+    def get_control_session(self, session_id: int) -> ControlSession | None: ...
+
+    def list_control_sessions(
+        self, subject: Subject | None = None, exam_item: int | None = None, limit: int = 20
+    ) -> list[ControlSession]:
+        """Контрольные, новые первыми."""
+        ...
+
+    def add_control_attempt(self, session_id: int, attempt_id: int) -> None: ...
+
+    def control_attempts(self, session_id: int) -> list[Attempt]: ...
+
+    def control_session_of_attempt(self, attempt_id: int) -> int | None: ...
+
+    def finish_control_session(
+        self, session_id: int, *, status: ControlStatus, passed_tasks: int, at: dt.datetime
+    ) -> ControlSession: ...
