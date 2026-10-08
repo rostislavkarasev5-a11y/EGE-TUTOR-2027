@@ -123,3 +123,9 @@ a.tab { padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; te
 a.tab.active { border-color: var(--accent); font-weight: 600; }
 .mistake-note { margin: 12px 0; padding: 10px; border-left: 3px solid var(--warn); }
 form.compact select { max-width: 60vw; }
+
+/* ИИ (Phase 6): всё от ИИ видно с пометкой «ИИ, предварительно» */
+.ai-label { color: var(--ai); font-size: 13px; font-weight: 600; white-space: nowrap; }
+.ai-box { border-left: 3px solid var(--ai); padding-left: 10px; margin: 10px 0; }
+.hint.ai { border-left-color: var(--ai); }
+textarea.solution { width: 100%; min-height: 220px; font: inherit; }

@@ -1,5 +1,24 @@
 """Словарь предметной области: перечисления и сущности."""
 
+from ege_tutor.core.domain.ai import (
+    AI_LABEL,
+    AI_PURPOSE_NAMES,
+    AICall,
+    AICallStatus,
+    AICriterionScore,
+    AIError,
+    AIMistakeSuggestion,
+    AINote,
+    AIPart2Suggestion,
+    AIPurpose,
+    AIStatus,
+    AITaskContext,
+    AITaskSuggestion,
+    AIText,
+    AIUsage,
+    Part2Grade,
+    Part2GradeStatus,
+)
 from ege_tutor.core.domain.attempt import (
     AnswerCheck,
     Attempt,
@@ -64,6 +83,8 @@ from ege_tutor.core.domain.task import (
 )
 
 __all__ = [
+    "AI_LABEL",
+    "AI_PURPOSE_NAMES",
     "CODE_VERDICT_LABELS",
     "DEFAULT_TARGET_SCORE",
     "HINT_LEVELS",
@@ -72,6 +93,19 @@ __all__ = [
     "PRACTICE_STATUSES",
     "SOURCE_LABELS",
     "STOP_REASON_NAMES",
+    "AICall",
+    "AICallStatus",
+    "AICriterionScore",
+    "AIError",
+    "AIMistakeSuggestion",
+    "AINote",
+    "AIPart2Suggestion",
+    "AIPurpose",
+    "AIStatus",
+    "AITaskContext",
+    "AITaskSuggestion",
+    "AIText",
+    "AIUsage",
     "AnswerCheck",
     "AnswerKind",
     "AnswerType",
@@ -104,6 +138,8 @@ __all__ = [
     "MistakeCategory",
     "MistakeDraft",
     "MistakePattern",
+    "Part2Grade",
+    "Part2GradeStatus",
     "Prediction",
     "ReviewItem",
     "ReviewReason",

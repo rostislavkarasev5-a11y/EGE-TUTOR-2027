@@ -16,6 +16,10 @@ from ege_tutor.core.domain import MistakeCategory, Subject, VerificationStatus
 
 CONFIG_DIR_ENV = "EGE_TUTOR_CONFIG_DIR"
 DATA_DIR_ENV = "EGE_TUTOR_DATA_DIR"
+# Настройки ИИ, которые владелец задаёт на сервере, не меняя файлы репозитория (ADR-0017).
+AI_PROVIDER_ENV = "EGE_AI_PROVIDER"
+AI_MODEL_ENV = "EGE_AI_MODEL"
+AI_BUDGET_ENV = "EGE_AI_MONTHLY_BUDGET_RUB"
 
 Factor = Annotated[float, Field(ge=0.0, le=1.0)]
 PositiveWeight = Annotated[float, Field(gt=0.0)]
@@ -53,8 +57,29 @@ class ExamDateConfig(_Strict):
         return self
 
 
+AIProvider = Literal["disabled", "yandex"]
+NonNegative = Annotated[float, Field(ge=0.0)]
+
+
 class AIConfig(_Strict):
-    enabled: bool
+    """ИИ-слой (ADR-0017). Ключи здесь не хранятся: только в переменных окружения сервера."""
+
+    provider: AIProvider
+    model: Annotated[str, Field(min_length=1)]
+    base_url: Annotated[str, Field(pattern=r"^https://")]
+    monthly_budget_rub: NonNegative
+    price_input_per_1000_rub: NonNegative
+    price_output_per_1000_rub: NonNegative
+    max_output_tokens: Annotated[int, Field(gt=0, le=8000)]
+    timeout_seconds: PositiveWeight
+    temperature: Annotated[float, Field(ge=0.0, le=1.0)] = 0.3
+
+    def cost_rub(self, input_tokens: int, output_tokens: int) -> float:
+        """Стоимость вызова по ценам из конфига."""
+        return (
+            input_tokens * self.price_input_per_1000_rub
+            + output_tokens * self.price_output_per_1000_rub
+        ) / 1000
 
 
 SandboxBackend = Literal["docker", "wsl2"]
@@ -276,6 +301,26 @@ def _read_toml[M: BaseModel](path: Path, model: type[M]) -> M:
         raise ConfigError(f"ошибка в {path.name}:\n{e}") from e
 
 
+def _with_ai_overrides(app: AppConfig) -> AppConfig:
+    """Переменные окружения сервера поверх [ai] из app.toml: провайдер, модель, бюджет."""
+    changes: dict[str, object] = {}
+    for env, key in (
+        (AI_PROVIDER_ENV, "provider"),
+        (AI_MODEL_ENV, "model"),
+        (AI_BUDGET_ENV, "monthly_budget_rub"),
+    ):
+        value = os.environ.get(env, "").strip()
+        if value:
+            changes[key] = value
+    if not changes:
+        return app
+    try:
+        ai = AIConfig.model_validate(app.ai.model_dump() | changes)
+    except ValidationError as e:
+        raise ConfigError(f"ошибка в переменных окружения ИИ:\n{e}") from e
+    return app.model_copy(update={"ai": ai})
+
+
 def load_settings(config_dir: Path | None = None) -> Settings:
     """Загрузить и проверить всю конфигурацию.
 
@@ -287,7 +332,7 @@ def load_settings(config_dir: Path | None = None) -> Settings:
         config_dir = Path(env) if env else default_config_dir()
     return Settings(
         config_dir=config_dir,
-        app=_read_toml(config_dir / "app.toml", AppConfig),
+        app=_with_ai_overrides(_read_toml(config_dir / "app.toml", AppConfig)),
         mastery=_read_toml(config_dir / "mastery.toml", MasteryConfig),
         diagnostics=_read_toml(config_dir / "diagnostics.toml", DiagnosticsConfig),
     )

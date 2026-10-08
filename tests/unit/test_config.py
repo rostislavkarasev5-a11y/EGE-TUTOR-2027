@@ -52,7 +52,7 @@ def test_missing_config_file_is_clear_error(config_dir):
 
 
 def test_unknown_key_is_rejected(config_dir):
-    _replace(config_dir / "app.toml", "enabled = false", "enabled = false\nenabeld = true")
+    _replace(config_dir / "app.toml", "temperature = 0.3", "temperature = 0.3\ntemperatur = 0.5")
     with pytest.raises(ConfigError, match=r"app\.toml"):
         load_settings(config_dir)
 

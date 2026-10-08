@@ -609,3 +609,88 @@ def test_diagnostic_flow_on_site(client, tutor):
     assert 'style="' not in done.text
     assert "завершена" in client.get("/diagnostics").text
     assert "уже завершена" in post(client, f"/diagnostics/{session_id}/finish").text
+
+
+# ── ИИ-помощник (Phase 6) ───────────────────────────────────────────────────
+
+
+AI_TASKS = """
+defaults:
+  subject: math
+  source: USER_MATERIAL
+  source_ref: "тест"
+tasks:
+  - exam_item: 6
+    statement: "Решите уравнение 2^x = 8."
+    answer: 3
+    skills: [M06.exponential]
+  - exam_item: 13
+    statement: "Решите уравнение и отберите корни на отрезке."
+"""
+
+
+@pytest.fixture
+def ai_client(fixed_clock, write_file):
+    from ege_tutor.core.app import TutorApp
+    from tests.fakes import FakeAIService
+
+    fake = FakeAIService()
+    app = TutorApp.create(clock=fixed_clock, ai=fake)
+    app.import_tasks(write_file("ai.yaml", AI_TASKS))
+    passwords = PasswordStore(web_dir(app.settings.data_dir) / "password.argon2")
+    passwords.set(PASSWORD)
+    client = TestClient(create_app(app, password_store=passwords), base_url="https://testserver")
+    page = client.get("/login")
+    client.post("/login", data={"csrf": _csrf(page.text), "password": PASSWORD, "next": "/"})
+    yield client, app, fake
+    app.close()
+
+
+def test_ai_page_without_ai(client):
+    page = client.get("/ai")
+    assert "ИИ недоступен" in page.text and "выключен" in page.text
+    assert "Потрачено в этом месяце: <strong>0.00 ₽</strong>" in page.text
+
+
+def test_ai_on_site(ai_client):
+    client, app, fake = ai_client
+    simple, extended = sorted(t.id for t in app.tasks())
+    app.review_task(simple, answer_is_correct=True)
+
+    attempt_id = _start(client, simple)
+    page = client.get(f"/attempts/{attempt_id}")
+    assert "Подсказка ИИ (уровень 1)" in page.text
+    hinted = post(client, f"/attempts/{attempt_id}/ai-hint")
+    assert fake.hint_text in hinted.text and "ИИ, предварительно" in hinted.text
+    assert "Подсказка ИИ (уровень 2)" in hinted.text
+
+    answered = post(client, f"/attempts/{attempt_id}/answer", {"answer": "4"})
+    assert "Объяснить решение (ИИ)" in answered.text
+    assert "Спросить ИИ о причине" in answered.text
+    explained = post(client, f"/attempts/{attempt_id}/explain")
+    assert fake.explanation in explained.text
+    mistake_id = re.search(r'action="/mistakes/(\d+)/ai"', explained.text).group(1)
+    suggested = post(client, f"/mistakes/{mistake_id}/ai", {"back": f"/attempts/{attempt_id}"})
+    assert "ИИ считает, что причина" in suggested.text and "Согласен с ИИ" in suggested.text
+
+    task_page = client.get(f"/tasks/{extended}")
+    assert "Проверить развёрнутое решение" in task_page.text
+    graded = post(
+        client, f"/tasks/{extended}/part2", {"solution": "Подробное решение с отбором корней."}
+    )
+    assert "/grades/" in str(graded.url)
+    assert "Оценка решения: 2 из 2" in graded.text and "предварительная оценка ИИ" in graded.text
+
+    from ege_tutor.core.domain import AITaskSuggestion
+    from tests.fakes import usage
+
+    fake.generated = AITaskSuggestion("Решите уравнение 5^x = 25.", "2", "решение", "2", usage())
+    assert "Составить похожую задачу (ИИ)" in client.get(f"/tasks/{simple}").text
+    made = post(client, f"/tasks/{simple}/generate")
+    assert "CORE проверил ответ" in made.text
+    assert "Сгенерировано ИИ" in made.text and "5^x = 25" in made.text
+
+    overview = client.get("/ai")
+    assert "ИИ подключён" in overview.text
+    assert "подсказка" in overview.text and "похожая задача" in overview.text
+    assert 'style="' not in overview.text

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import statement, answer_block, csrf_field with context %}
+{% from "macros.html" import statement, answer_block, csrf_field, ai_label with context %}
 {% block content %}
 {{ statement(task) }}
 <section class="card">
@@ -19,6 +19,35 @@
   <p><a href="/tasks/{{ task.id }}?answer=1">Показать ответ и решение</a>
     <span class="meta">(без попытки; если хочешь решать сам — не открывай)</span></p>
   {% endif %}
+  {% if ai.available and not generate_reason %}
+  <form method="post" action="/tasks/{{ task.id }}/generate">
+    {{ csrf_field() }}
+    <button type="submit" class="secondary">Составить похожую задачу (ИИ)</button>
+    <span class="meta">Задача будет помечена «Сгенерировано ИИ», а её ответ CORE перепроверит.</span>
+  </form>
+  {% endif %}
 </section>
+{% if task.answer_type.value == "EXTENDED" %}
+<section class="card" id="part2">
+  <h2>Проверить развёрнутое решение {{ ai_label() }}</h2>
+  {% if ai.available %}
+  <p class="meta">Перепиши решение текстом (формулы — как x^2, sqrt(3)). ИИ оценит его по критериям.
+    Это предварительная оценка: в прогресс она не идёт.</p>
+  <form method="post" action="/tasks/{{ task.id }}/part2">
+    {{ csrf_field() }}
+    <textarea name="solution" class="solution" required minlength="20" maxlength="10000"></textarea>
+    <button type="submit">Оценить решение</button>
+  </form>
+  {% else %}
+  <p class="meta">ИИ сейчас недоступен: {{ ai.reason }}. Самопроверка по критериям появится в Phase 8.</p>
+  {% endif %}
+  {% if grades %}
+  <h3>Прошлые оценки</h3>
+  <ul class="plain">
+    {% for g in grades %}<li><a href="/grades/{{ g.id }}">{{ g.created_at|utc_time }} — {{ g.points }} из {{ g.max_points }}</a></li>{% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endif %}
 {% if show_answer %}{{ answer_block(task) }}{% endif %}
 {% endblock %}

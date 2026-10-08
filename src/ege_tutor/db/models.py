@@ -23,6 +23,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from ege_tutor.core.domain import (
+    AICallStatus,
+    AIPurpose,
     AnswerKind,
     AnswerType,
     AttemptMode,
@@ -33,6 +35,7 @@ from ege_tutor.core.domain import (
     ImportBatchStatus,
     ItemBasis,
     MistakeCategory,
+    Part2GradeStatus,
     StopReason,
     Subject,
     TaskSource,
@@ -496,3 +499,76 @@ class DiagnosticResultRow(Base):
     confidence: Mapped[float] = mapped_column(Float)
     basis: Mapped[ItemBasis] = mapped_column(_enum(ItemBasis))
     answered: Mapped[int]
+
+
+# ── ИИ (Phase 6, ADR-0017) ──────────────────────────────────────────────────
+
+
+class AICallRow(Base):
+    """Каждое обращение к ИИ: назначение, модель, токены, стоимость. Для учёта трат и отладки."""
+
+    __tablename__ = "ai_call"
+    __table_args__ = (
+        CheckConstraint("input_tokens >= 0 AND output_tokens >= 0", name="tokens_non_negative"),
+        CheckConstraint("cost_rub >= 0", name="cost_non_negative"),
+        Index("ix_ai_call_created_at", "created_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    purpose: Mapped[AIPurpose] = mapped_column(_enum(AIPurpose))
+    status: Mapped[AICallStatus] = mapped_column(_enum(AICallStatus))
+    model: Mapped[str] = mapped_column(String(100))
+    input_tokens: Mapped[int]
+    output_tokens: Mapped[int]
+    cost_rub: Mapped[float] = mapped_column(Float)
+    request_hash: Mapped[str] = mapped_column(String(64))
+    error: Mapped[str | None] = mapped_column(Text)
+    attempt_id: Mapped[int | None] = mapped_column(ForeignKey("attempt.id"))
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("task.id"))
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class AINoteRow(Base):
+    """Принятый CORE ответ ИИ: подсказка, объяснение, разбор ошибки. Помечен «ИИ»."""
+
+    __tablename__ = "ai_note"
+    __table_args__ = (
+        CheckConstraint("hint_level IS NULL OR hint_level BETWEEN 1 AND 3", name="hint_level"),
+        CheckConstraint("confidence IS NULL OR confidence BETWEEN 0 AND 1", name="confidence"),
+        Index("ix_ai_note_attempt", "attempt_id"),
+        Index("ix_ai_note_mistake", "mistake_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    ai_call_id: Mapped[int] = mapped_column(ForeignKey("ai_call.id"))
+    purpose: Mapped[AIPurpose] = mapped_column(_enum(AIPurpose))
+    text: Mapped[str] = mapped_column(Text)
+    attempt_id: Mapped[int | None] = mapped_column(ForeignKey("attempt.id"))
+    task_id: Mapped[int | None] = mapped_column(ForeignKey("task.id"))
+    mistake_id: Mapped[int | None] = mapped_column(ForeignKey("mistake.id"))
+    hint_level: Mapped[int | None]
+    category: Mapped[MistakeCategory | None] = mapped_column(_enum(MistakeCategory))
+    confidence: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class Part2GradeRow(Base):
+    """Оценка развёрнутого решения части 2. В Phase 6 — только предварительная оценка ИИ."""
+
+    __tablename__ = "part2_grade"
+    __table_args__ = (
+        CheckConstraint("points BETWEEN 0 AND max_points", name="points_range"),
+        Index("ix_part2_grade_task", "task_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("task.id"))
+    attempt_id: Mapped[int | None] = mapped_column(ForeignKey("attempt.id"))
+    ai_call_id: Mapped[int | None] = mapped_column(ForeignKey("ai_call.id"))
+    solution_text: Mapped[str] = mapped_column(Text)
+    points: Mapped[int]
+    max_points: Mapped[int]
+    criteria_json: Mapped[str] = mapped_column(Text)
+    summary: Mapped[str] = mapped_column(Text)
+    status: Mapped[Part2GradeStatus] = mapped_column(_enum(Part2GradeStatus))
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)

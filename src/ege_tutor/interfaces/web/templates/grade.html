@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "macros.html" import statement, ai_label with context %}
+{% block content %}
+{{ statement(task) }}
+<section class="card">
+  <h2>Оценка решения: {{ grade.points }} из {{ grade.max_points }} {{ ai_label() }}</h2>
+  <p class="meta">{{ grade.created_at|utc_time }} · Это предварительная оценка ИИ, а не оценка эксперта.
+    В прогресс и прогноз она не идёт.</p>
+  <table>
+    <tr><th>Критерий</th><th>Баллы</th><th>Почему</th></tr>
+    {% for c in grade.criteria %}
+    <tr><td>{{ c.name }}</td><td>{{ c.points }} из {{ c.max_points }}</td><td>{{ c.comment }}</td></tr>
+    {% endfor %}
+  </table>
+  <p>{{ grade.summary }}</p>
+  <h3>Твоё решение</h3>
+  <div class="statement">{{ grade.solution_text }}</div>
+  <p><a href="/tasks/{{ task.id }}#part2">Отправить исправленное решение</a></p>
+</section>
+{% endblock %}

@@ -16,6 +16,8 @@ from ege_tutor import __version__
 from ege_tutor.config import ConfigError
 from ege_tutor.core.app import AppError, TutorApp
 from ege_tutor.core.domain import (
+    AI_LABEL,
+    AI_PURPOSE_NAMES,
     ITEM_BASIS_NAMES,
     MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
@@ -457,6 +459,7 @@ def task(
 # ── решение задач (Phase 2) ─────────────────────────────────────────────────
 
 HINT_WORDS = {"?", "подсказка", "hint"}
+AI_HINT_WORDS = {"ии", "ai", "bb"}  # «bb» — «ии» в английской раскладке
 GIVE_UP_WORDS = {"сдаюсь", "!", "give up"}
 SIMILAR_WORDS = {"похожая", "similar"}
 EXIT_WORDS = {"выход", "q", "quit", "exit"}
@@ -488,6 +491,8 @@ def _show_task_for_solving(tutor: TutorApp, t: Task, attempt: Attempt) -> None:
         "[dim]Введи ответ. Команды: ? — подсказка, сдаюсь — показать ответ, "
         "похожая — другая задача того же номера, выход — закончить.[/]"
     )
+    if tutor.ai_allowed_for(attempt.id) and tutor.ai_status().available:
+        console.print("[dim]ии — подсказка от ИИ, если у задачи нет записанной.[/]")
 
 
 # «l» и «ytn» — это «д» и «нет», набранные в английской раскладке.
@@ -571,6 +576,19 @@ def _solve_one(
                 console.print(_panel(hint.text, title=title, title_align="left"))
                 console.print(f"[dim]Самостоятельность этой попытки теперь {hint.independence}.[/]")
                 continue
+            if command in AI_HINT_WORDS:
+                console.print("[dim]Спрашиваю ИИ…[/]")
+                try:
+                    ai_hint = tutor.ai_hint(attempt.id)
+                except AppError as e:
+                    console.print(f"[yellow]{escape(str(e))}[/]")
+                    continue
+                title = f"Уровень {ai_hint.level}: {HINT_NAMES[ai_hint.level]} · {AI_LABEL}"
+                console.print(_panel(Text(ai_hint.text), title=title, title_align="left"))
+                console.print(
+                    f"[dim]Самостоятельность этой попытки теперь {ai_hint.independence}.[/]"
+                )
+                continue
             if command in EXIT_WORDS:
                 tutor.abandon_attempt(attempt.id)
                 return "exit", None
@@ -610,6 +628,11 @@ def _report_mistakes(tutor: TutorApp, attempt_id: int) -> None:
         f"[dim]Ошибка записана: {first.category_name} — {first.description}. "
         f"Если причина другая: ege mistake {first.id} КАТЕГОРИЯ (список: ege mistake --help).[/]"
     )
+    if tutor.ai_allowed_for(attempt_id) and tutor.ai_status().available:
+        console.print(
+            f"[dim]Объяснение от ИИ: ege explain {attempt_id}; "
+            f"причина ошибки по мнению ИИ: ege ai-mistake {first.id}.[/]"
+        )
 
 
 @app.command()
@@ -1171,3 +1194,125 @@ def run() -> None:
         if hasattr(stream, "reconfigure") and (stream.encoding or "").lower() != "utf-8":
             stream.reconfigure(encoding="utf-8", errors="replace")
     app()
+
+
+# ── ИИ-помощник (Phase 6, ADR-0017) ─────────────────────────────────────────
+
+
+@app.command(name="ai")
+def ai_info(
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Сколько обращений показать.")] = 10,
+) -> None:
+    """Подключён ли ИИ, сколько потрачено в этом месяце и последние обращения."""
+    tutor = _tutor()
+    try:
+        status = tutor.ai_status()
+        calls = tutor.ai_calls(limit)
+    finally:
+        tutor.close()
+    if status.available:
+        console.print(f"[green]ИИ подключён:[/] {status.provider}, модель {escape(status.model)}")
+    else:
+        console.print(f"[yellow]ИИ недоступен:[/] {escape(status.reason or '')}")
+    console.print(
+        f"Потрачено в этом месяце: {status.month_spent_rub:.2f} ₽ "
+        f"из {status.monthly_budget_rub:.2f} ₽ · обращений: {status.month_calls}"
+    )
+    if not calls:
+        return
+    table = _table(title="Обращения к ИИ")
+    for column in ("Когда", "Зачем", "Итог", "Токены", "₽"):
+        table.add_column(column)
+    results = {"OK": "принято", "REJECTED": "отклонено", "ERROR": "ошибка"}
+    for c in calls:
+        table.add_row(
+            c.created_at.strftime("%Y-%m-%d %H:%M"),
+            AI_PURPOSE_NAMES[c.purpose],
+            results[c.status.value] + (f": {escape(c.error)}" if c.error else ""),
+            f"{c.input_tokens} + {c.output_tokens}",
+            f"{c.cost_rub:.2f}",
+        )
+    console.print(table)
+
+
+@app.command()
+def explain(attempt_id: Annotated[int, typer.Argument(help="Номер попытки.")]) -> None:
+    """Объяснение решения от ИИ — после ответа или «сдаюсь»."""
+    tutor = _tutor()
+    try:
+        note = tutor.ai_explain(attempt_id)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    finally:
+        tutor.close()
+    console.print(_panel(Text(note.text), title=f"Объяснение · {AI_LABEL}", title_align="left"))
+    console.print("[dim]ИИ может ошибаться: верный ответ — тот, что записан у задачи.[/]")
+
+
+@app.command(name="ai-mistake")
+def ai_mistake(mistake_id: Annotated[int, typer.Argument(help="Номер ошибки.")]) -> None:
+    """Спросить ИИ, в чём причина ошибки. Согласиться — командой ege mistake."""
+    tutor = _tutor()
+    try:
+        note = tutor.ai_classify_mistake(mistake_id)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    finally:
+        tutor.close()
+    assert note.category is not None and note.confidence is not None
+    console.print(
+        f"{AI_LABEL}: причина — [bold]{MISTAKE_CATEGORY_NAMES[note.category]}[/] "
+        f"(уверенность {note.confidence:.0%})"
+    )
+    console.print(Text(note.text))
+    console.print(f"[dim]Согласен — ege mistake {mistake_id} {note.category.value}[/]")
+
+
+@app.command(name="check-part2")
+def check_part2(
+    task_id: Annotated[int, typer.Argument(help="Номер задачи с развёрнутым решением.")],
+    path: Annotated[Path, typer.Argument(help="Текстовый файл с решением (UTF-8).", exists=True)],
+) -> None:
+    """Предварительная оценка развёрнутого решения ИИ по критериям (в прогресс не идёт)."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise _fail(f"не удалось прочитать файл: {e}") from e
+    tutor = _tutor()
+    console.print("[dim]Отправляю решение ИИ…[/]")
+    try:
+        grade = tutor.ai_grade_part2(task_id, text)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    finally:
+        tutor.close()
+    table = _table(title=f"Оценка: {grade.points} из {grade.max_points} · {AI_LABEL}")
+    for column in ("Критерий", "Баллы", "Почему"):
+        table.add_column(column)
+    for c in grade.criteria:
+        table.add_row(escape(c.name), f"{c.points} из {c.max_points}", escape(c.comment))
+    console.print(table)
+    console.print(Text(grade.summary))
+
+
+@app.command()
+def generate(task_id: Annotated[int, typer.Argument(help="Номер задачи-образца.")]) -> None:
+    """Похожая задача от ИИ. CORE перепроверяет её ответ; задача помечена «Сгенерировано ИИ»."""
+    tutor = _tutor()
+    console.print("[dim]Прошу ИИ составить задачу…[/]")
+    try:
+        made = tutor.ai_generate_similar(task_id)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    finally:
+        tutor.close()
+    t = made.task
+    console.print(_panel(Text(t.statement), title=f"Задача {t.id} · {_source_text(t.source)}"))
+    if t.can_practice:
+        console.print(
+            f"[green]Ответ проверен:[/] {made.check_note}. Решать: ege solve --task {t.id}"
+        )
+    else:
+        console.print(
+            f"[yellow]Ответ не проверен:[/] {escape(made.check_note)}. Сверь его: ege review {t.id}"
+        )

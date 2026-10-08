@@ -4,10 +4,23 @@ from pathlib import Path
 
 import pytest
 
-from ege_tutor.config import DATA_DIR_ENV, default_config_dir
+from ege_tutor.config import (
+    AI_BUDGET_ENV,
+    AI_MODEL_ENV,
+    AI_PROVIDER_ENV,
+    DATA_DIR_ENV,
+    default_config_dir,
+)
 from ege_tutor.core.clock import FixedClock
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+AI_ENV_NAMES = (
+    AI_PROVIDER_ENV,
+    AI_MODEL_ENV,
+    AI_BUDGET_ENV,
+    "EGE_YANDEX_API_KEY",
+    "EGE_YANDEX_FOLDER_ID",
+)
 
 
 @pytest.fixture(autouse=True)
@@ -15,6 +28,9 @@ def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Каждый тест работает со своей временной базой, а не с data/ пользователя."""
     target = tmp_path / "data"
     monkeypatch.setenv(DATA_DIR_ENV, str(target))
+    # Настройки ИИ с компьютера разработчика не должны влиять на тесты (ADR-0017).
+    for name in AI_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
     return target
 
 

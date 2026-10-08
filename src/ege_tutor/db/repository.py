@@ -12,6 +12,12 @@ from sqlalchemy import Engine, delete, func, select, update
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from ege_tutor.core.domain import (
+    AICall,
+    AICallStatus,
+    AICriterionScore,
+    AINote,
+    AIPurpose,
+    AIUsage,
     Attempt,
     AttemptMode,
     AttemptStatus,
@@ -34,6 +40,8 @@ from ege_tutor.core.domain import (
     MistakeCategory,
     MistakeDraft,
     MistakePattern,
+    Part2Grade,
+    Part2GradeStatus,
     Prediction,
     Skill,
     StopReason,
@@ -52,6 +60,8 @@ from ege_tutor.core.domain import (
 from ege_tutor.core.ports.repository import RepositoryError
 from ege_tutor.db.engine import is_migrated, make_engine, upgrade_to_head
 from ege_tutor.db.models import (
+    AICallRow,
+    AINoteRow,
     AttemptRow,
     CodeRunRow,
     DiagnosticAttemptRow,
@@ -65,6 +75,7 @@ from ege_tutor.db.models import (
     MasterySnapshotRow,
     MistakePatternRow,
     MistakeRow,
+    Part2GradeRow,
     PredictionRow,
     SkillExamItemRow,
     SkillPrerequisiteRow,
@@ -1121,3 +1132,190 @@ class SqlRepository:
                 )
                 for row in s.scalars(query)
             ]
+
+    # ── ИИ (Phase 6) ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _ai_call(row: AICallRow) -> AICall:
+        return AICall(
+            id=row.id,
+            purpose=row.purpose,
+            status=row.status,
+            model=row.model,
+            input_tokens=row.input_tokens,
+            output_tokens=row.output_tokens,
+            cost_rub=row.cost_rub,
+            request_hash=row.request_hash,
+            created_at=row.created_at,
+            error=row.error,
+            attempt_id=row.attempt_id,
+            task_id=row.task_id,
+        )
+
+    def add_ai_call(
+        self,
+        *,
+        purpose: AIPurpose,
+        status: AICallStatus,
+        model: str,
+        usage: AIUsage | None,
+        cost_rub: float,
+        at: dt.datetime,
+        error: str | None = None,
+        attempt_id: int | None = None,
+        task_id: int | None = None,
+    ) -> AICall:
+        with self._session.begin() as s:
+            row = AICallRow(
+                purpose=purpose,
+                status=status,
+                model=model,
+                input_tokens=usage.input_tokens if usage else 0,
+                output_tokens=usage.output_tokens if usage else 0,
+                cost_rub=cost_rub,
+                request_hash=usage.request_hash if usage else "",
+                error=error,
+                attempt_id=attempt_id,
+                task_id=task_id,
+                created_at=at,
+            )
+            s.add(row)
+            s.flush()
+            return self._ai_call(row)
+
+    def ai_usage_since(self, since: dt.datetime) -> tuple[float, int]:
+        query = select(func.coalesce(func.sum(AICallRow.cost_rub), 0.0), func.count()).where(
+            AICallRow.created_at >= since
+        )
+        with self._session() as s:
+            cost, count = s.execute(query).one()
+            return float(cost), int(count)
+
+    def list_ai_calls(self, limit: int = 50) -> list[AICall]:
+        query = select(AICallRow).order_by(AICallRow.created_at.desc(), AICallRow.id.desc())
+        with self._session() as s:
+            return [self._ai_call(row) for row in s.scalars(query.limit(limit))]
+
+    @staticmethod
+    def _ai_note(row: AINoteRow) -> AINote:
+        return AINote(
+            id=row.id,
+            purpose=row.purpose,
+            text=row.text,
+            created_at=row.created_at,
+            attempt_id=row.attempt_id,
+            task_id=row.task_id,
+            mistake_id=row.mistake_id,
+            hint_level=row.hint_level,
+            category=row.category,
+            confidence=row.confidence,
+        )
+
+    def add_ai_note(
+        self,
+        *,
+        ai_call_id: int,
+        purpose: AIPurpose,
+        text: str,
+        at: dt.datetime,
+        attempt_id: int | None = None,
+        task_id: int | None = None,
+        mistake_id: int | None = None,
+        hint_level: int | None = None,
+        category: MistakeCategory | None = None,
+        confidence: float | None = None,
+    ) -> AINote:
+        with self._session.begin() as s:
+            row = AINoteRow(
+                ai_call_id=ai_call_id,
+                purpose=purpose,
+                text=text,
+                attempt_id=attempt_id,
+                task_id=task_id,
+                mistake_id=mistake_id,
+                hint_level=hint_level,
+                category=category,
+                confidence=confidence,
+                created_at=at,
+            )
+            s.add(row)
+            s.flush()
+            return self._ai_note(row)
+
+    def list_ai_notes(
+        self,
+        *,
+        attempt_id: int | None = None,
+        mistake_id: int | None = None,
+        purpose: AIPurpose | None = None,
+    ) -> list[AINote]:
+        query = select(AINoteRow).order_by(AINoteRow.created_at, AINoteRow.id)
+        if attempt_id is not None:
+            query = query.where(AINoteRow.attempt_id == attempt_id)
+        if mistake_id is not None:
+            query = query.where(AINoteRow.mistake_id == mistake_id)
+        if purpose is not None:
+            query = query.where(AINoteRow.purpose == purpose)
+        with self._session() as s:
+            return [self._ai_note(row) for row in s.scalars(query)]
+
+    @staticmethod
+    def _part2_grade(row: Part2GradeRow) -> Part2Grade:
+        criteria = tuple(AICriterionScore(**c) for c in json.loads(row.criteria_json))
+        return Part2Grade(
+            id=row.id,
+            task_id=row.task_id,
+            solution_text=row.solution_text,
+            points=row.points,
+            max_points=row.max_points,
+            criteria=criteria,
+            summary=row.summary,
+            status=row.status,
+            created_at=row.created_at,
+            attempt_id=row.attempt_id,
+        )
+
+    def add_part2_grade(
+        self,
+        *,
+        task_id: int,
+        solution_text: str,
+        points: int,
+        max_points: int,
+        criteria: Sequence[AICriterionScore],
+        summary: str,
+        status: Part2GradeStatus,
+        at: dt.datetime,
+        ai_call_id: int | None = None,
+        attempt_id: int | None = None,
+    ) -> Part2Grade:
+        with self._session.begin() as s:
+            row = Part2GradeRow(
+                task_id=task_id,
+                attempt_id=attempt_id,
+                ai_call_id=ai_call_id,
+                solution_text=solution_text,
+                points=points,
+                max_points=max_points,
+                criteria_json=json.dumps([c.__dict__ for c in criteria], ensure_ascii=False),
+                summary=summary,
+                status=status,
+                created_at=at,
+            )
+            s.add(row)
+            s.flush()
+            return self._part2_grade(row)
+
+    def list_part2_grades(self, task_id: int | None = None, limit: int = 50) -> list[Part2Grade]:
+        query = select(Part2GradeRow).order_by(
+            Part2GradeRow.created_at.desc(), Part2GradeRow.id.desc()
+        )
+        if task_id is not None:
+            query = query.where(Part2GradeRow.task_id == task_id)
+        with self._session() as s:
+            return [self._part2_grade(row) for row in s.scalars(query.limit(limit))]
+
+    def get_part2_grade(self, grade_id: int) -> Part2Grade | None:
+        with self._session() as s:
+            row = s.get(Part2GradeRow, grade_id)
+            return self._part2_grade(row) if row else None

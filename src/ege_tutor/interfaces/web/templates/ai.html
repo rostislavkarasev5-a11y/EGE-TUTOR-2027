@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>ИИ-помощник</h1>
+<section class="card">
+  {% if ai.available %}
+  <p class="flash success">ИИ подключён: {{ ai.provider }}, модель {{ ai.model }}.</p>
+  {% else %}
+  <p class="flash warning">ИИ недоступен: {{ ai.reason }}.</p>
+  {% endif %}
+  <p>Потрачено в этом месяце: <strong>{{ '%.2f'|format(ai.month_spent_rub) }} ₽</strong>
+    из {{ '%.2f'|format(ai.monthly_budget_rub) }} ₽ · обращений: {{ ai.month_calls }}.</p>
+  <p class="meta">Стоимость считается по ценам из настроек (с запасом). Точный расход — в биллинге Yandex Cloud.</p>
+  <h3>Что умеет ИИ</h3>
+  <ul class="plain">
+    <li>подсказка уровней 1–3, если у задачи нет записанной (засчитывается как обычная подсказка);</li>
+    <li>объяснение решения — после ответа или «Сдаюсь»;</li>
+    <li>предложение, в чём причина ошибки (решаешь ты);</li>
+    <li>предварительная оценка развёрнутого решения части 2 — на странице задачи;</li>
+    <li>похожая задача: ИИ составляет, CORE перепроверяет ответ.</li>
+  </ul>
+  <p class="meta">В диагностике (и позже в контрольных, пробниках, экзамене) ИИ выключен всегда.
+    В ИИ уходят только задача, эталон и твой ответ — без имени, целей и расписания.</p>
+</section>
+
+{% if grades %}
+<section class="card">
+  <h2>Оценки части 2</h2>
+  <ul class="plain">
+    {% for g in grades %}<li><a href="/grades/{{ g.id }}">{{ g.created_at|utc_time }} · задача {{ g.task_id }} · {{ g.points }} из {{ g.max_points }}</a></li>{% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Обращения к ИИ</h2>
+  {% if not calls %}<p>Обращений пока не было.</p>{% else %}
+  <div class="scroll">
+  <table>
+    <tr><th>Когда</th><th>Зачем</th><th>Итог</th><th>Токены</th><th>₽</th></tr>
+    {% for c in calls %}
+    <tr>
+      <td>{{ c.created_at|utc_time }}</td>
+      <td>{{ AI_PURPOSE_NAMES[c.purpose] }}{% if c.task_id %} · <a href="/tasks/{{ c.task_id }}">задача {{ c.task_id }}</a>{% endif %}</td>
+      <td>{% if c.status.value == "OK" %}принято{% elif c.status.value == "REJECTED" %}отклонено CORE{% else %}ошибка{% endif %}
+        {% if c.error %}<div class="meta">{{ c.error }}</div>{% endif %}</td>
+      <td>{{ c.input_tokens }} + {{ c.output_tokens }}</td>
+      <td>{{ '%.2f'|format(c.cost_rub) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

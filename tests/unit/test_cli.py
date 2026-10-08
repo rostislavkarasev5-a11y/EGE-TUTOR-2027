@@ -316,3 +316,17 @@ def test_bank_and_diagnostic():
     assert "завершена" in history.output
     assert "Прогноз" in invoke("diagnostics", "1").output
     assert invoke("diagnostics", "99").exit_code == 1
+
+
+def test_ai_commands_without_ai(monkeypatch):
+    result = invoke("ai")
+    assert result.exit_code == 0, result.output
+    assert "ИИ недоступен" in result.output and "0.00 ₽" in result.output
+    monkeypatch.setenv("EGE_AI_PROVIDER", "yandex")
+    result = invoke("ai")
+    assert "EGE_YANDEX_API_KEY" in result.output
+    assert invoke("import", SAMPLE, "--apply").exit_code == 0
+    generated = invoke("generate", "1")
+    assert generated.exit_code == 1
+    assert "ИИ недоступен" in generated.output
+    assert invoke("explain", "999").exit_code == 1
