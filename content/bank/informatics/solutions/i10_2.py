@@ -1,7 +1,11 @@
 """Эталонное решение: информатика №10, задача 2 (стартовый банк, ИИ)."""
 
-import re
+from ipaddress import ip_address, ip_interface
 
-with open("i10_2.txt", encoding="utf-8") as f:
-    words = re.findall(r"[а-яё]+", f.read().lower())
-print(sum(1 for w in words if w.startswith("лес")))
+target = ip_address("118.46.144.0")
+count = sum(
+    1
+    for prefix in range(33)
+    if ip_interface(f"118.46.147.29/{prefix}").network.network_address == target
+)
+print(count)

@@ -32,7 +32,7 @@ tasks:
       - input: "3"
         output: 6
   - subject: math
-    exam_item: 6
+    exam_item: 7
     statement: "Решите уравнение x + 1 = 3."
     answer: 2
 """
@@ -184,7 +184,7 @@ def test_import_rejects_bad_tests(tutor, write_file):
     bad = """
 defaults: {source: USER_MATERIAL, source_ref: "тест"}
 tasks:
-  - {subject: math, exam_item: 6, statement: "a", answer: 1, tests: [{input: "1", output: 1}]}
+  - {subject: math, exam_item: 7, statement: "a", answer: 1, tests: [{input: "1", output: 1}]}
   - {subject: informatics, exam_item: 16, statement: "b", answer: 1, tests: "1 -> 1"}
   - {subject: informatics, exam_item: 16, statement: "c", answer: 1, tests: [{input: "1"}]}
   - {subject: informatics, exam_item: 16, statement: "d", answer: 1,

@@ -13,25 +13,25 @@ defaults:
   source: USER_MATERIAL
   source_ref: "тест"
 tasks:
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 3x − 7 = 11."
     answer: 6
     solution: "3x = 18, x = 6."
     hints: ["Перенеси −7 вправо.", "Получится 3x = 18."]
     skills: [M06.algebraic]
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 2x = 9."
     answer: "4,5"
     hints: {3: "Раздели обе части на 2."}
     skills: [M06.algebraic]
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 2^x = 8."
     answer: 3
     skills: [M06.exponential]
   - exam_item: 4
     statement: "Монету бросают один раз. Найдите вероятность выпадения орла."
     answer: "0,5"
-  - exam_item: 13
+  - exam_item: 14
     statement: "Решите уравнение и отберите корни."
 """
 
@@ -172,15 +172,15 @@ def test_empty_answer_is_rejected(tutor, ids):
 
 
 def test_next_task_prefers_least_practiced(tutor, ids):
-    first = tutor.next_task(exam_item=6)
+    first = tutor.next_task(exam_item=7)
     tutor.submit_answer(tutor.start_attempt(first.id).id, "0")
-    second = tutor.next_task(exam_item=6)
+    second = tutor.next_task(exam_item=7)
     assert second.id != first.id
 
 
 def test_next_task_skips_unpracticable(tutor, ids):
     with pytest.raises(AppError, match="Phase 8"):
-        tutor.next_task(exam_item=13)
+        tutor.next_task(exam_item=14)
 
 
 def test_similar_task_prefers_shared_skill(tutor, ids):
@@ -192,11 +192,11 @@ def test_similar_task_prefers_shared_skill(tutor, ids):
 def test_import_validates_hints(tutor, write_file):
     text = """
 tasks:
-  - {subject: math, exam_item: 6, statement: "A", answer: 6, source: USER_MATERIAL,
+  - {subject: math, exam_item: 7, statement: "A", answer: 6, source: USER_MATERIAL,
      source_ref: r, hints: {4: "решение"}}
-  - {subject: math, exam_item: 6, statement: "B", answer: 6, source: USER_MATERIAL,
+  - {subject: math, exam_item: 7, statement: "B", answer: 6, source: USER_MATERIAL,
      source_ref: r, hints: ["ответ 6"]}
-  - {subject: math, exam_item: 6, statement: "C", answer: 6, source: USER_MATERIAL,
+  - {subject: math, exam_item: 7, statement: "C", answer: 6, source: USER_MATERIAL,
      source_ref: r, hints: ["", "x"]}
 """
     report = tutor.preview_import(write_file("h.yaml", text))

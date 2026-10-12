@@ -18,10 +18,10 @@ def test_math_spec_matches_current_structure(catalog):
     spec = catalog.specs[Subject.MATH_PROFILE]
     assert spec.exam_year == 2027
     assert spec.status == "provisional"
-    assert len(spec.items) == 19
-    assert all(i.answer_kind == AnswerKind.SHORT for i in spec.items[:12])
-    assert all(i.answer_kind == AnswerKind.EXTENDED for i in spec.items[12:])
-    assert spec.max_primary_score == 32
+    assert len(spec.items) == 20
+    assert all(i.answer_kind == AnswerKind.SHORT for i in spec.items[:13])
+    assert all(i.answer_kind == AnswerKind.EXTENDED for i in spec.items[13:])
+    assert spec.max_primary_score == 33
 
 
 def test_informatics_spec_matches_current_structure(catalog):

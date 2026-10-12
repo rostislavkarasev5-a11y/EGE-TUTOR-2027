@@ -1,7 +1,6 @@
 """Эталонное решение: информатика №10, задача 1 (стартовый банк, ИИ)."""
 
-import re
+from ipaddress import ip_interface
 
-with open("i10_1.txt", encoding="utf-8") as f:
-    words = re.findall(r"[а-яё]+", f.read().lower())
-print(words.count("мост"))
+net = ip_interface("172.19.205.77/255.255.240.0").network
+print(str(net.network_address).split(".")[2])

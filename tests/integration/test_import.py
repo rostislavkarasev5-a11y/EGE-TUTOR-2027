@@ -18,11 +18,11 @@ defaults:
   source: USER_MATERIAL
   source_ref: "Тестовый конспект"
 tasks:
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение x + 1 = 3."
     answer: 2
     skills: [M06.algebraic]
-  - exam_item: 13
+  - exam_item: 14
     statement: "Решите уравнение и отберите корни."
     skills: [M13.trig_equations]
 """
