@@ -30,3 +30,4 @@ ADR — короткая запись одного архитектурного 
 | [0018](0018-voice-tutor-speechkit.md) | Разговор с репетитором и голос через Yandex SpeechKit | Accepted |
 | [0019](0019-planner-calendar-discipline.md) | Расписание, план на день и дисциплина (Phase 7) | Accepted |
 | [0020](0020-exam-structure-2027.md) | Структура ЕГЭ 2027 и перенумерация заданий | Accepted |
+| [0021](0021-reshu-ege-page-import.md) | Импорт задач со страниц Решу ЕГЭ и теория по подразделам | Accepted |
