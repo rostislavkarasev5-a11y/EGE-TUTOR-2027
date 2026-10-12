@@ -29,3 +29,4 @@ ADR — короткая запись одного архитектурного 
 | [0017](0017-ai-via-yandex-ai-studio.md) | ИИ-слой через Yandex AI Studio | Accepted |
 | [0018](0018-voice-tutor-speechkit.md) | Разговор с репетитором и голос через Yandex SpeechKit | Accepted |
 | [0019](0019-planner-calendar-discipline.md) | Расписание, план на день и дисциплина (Phase 7) | Accepted |
+| [0020](0020-exam-structure-2027.md) | Структура ЕГЭ 2027 и перенумерация заданий | Accepted |

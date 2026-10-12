@@ -46,7 +46,7 @@ defaults:
   source_ref: "Мой конспект, урок 1"
 
 tasks:
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 2x + 5 = 17."
     answer: 6
     solution: "2x = 12, x = 6."
@@ -56,7 +56,7 @@ tasks:
     difficulty: 1
     skills: [M06.algebraic]
 
-  - exam_item: 13
+  - exam_item: 14
     statement: "а) Решите уравнение ... б) Найдите корни на отрезке ..."
     solution: "Здесь можно записать решение."
     time_norm_minutes: 15
