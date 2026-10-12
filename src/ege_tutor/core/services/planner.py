@@ -11,6 +11,7 @@ from dataclasses import dataclass, replace
 
 from ege_tutor.config import PlannerConfig
 from ege_tutor.core.domain import (
+    MISTAKE_CATEGORY_NAMES,
     Attempt,
     AttemptMode,
     CalendarEvent,
@@ -396,11 +397,7 @@ class PlannerService:
                 value = f", освоение {entry.value:.2f}" if entry.value is not None else ""
                 reason = f"повторение «{entry.skill_title}»: {when}{value}"
             else:
-                category = entry.category.name if entry.category else ""
-                from ege_tutor.core.domain import MISTAKE_CATEGORY_NAMES
-
-                if entry.category is not None:
-                    category = MISTAKE_CATEGORY_NAMES[entry.category]
+                category = MISTAKE_CATEGORY_NAMES[entry.category] if entry.category else ""
                 reason = f"частая ошибка «{category}» в навыке «{entry.skill_title}»"
             draft = self._draft(
                 day,
@@ -616,6 +613,9 @@ class PlannerService:
 
     # ── правило 80/20 ───────────────────────────────────────────────────────
 
+    def item(self, item_id: int) -> PlanItem:
+        return self._item(item_id)
+
     def _item(self, item_id: int) -> PlanItem:
         item = self._repo.get_plan_item(item_id)
         if item is None:
@@ -732,6 +732,24 @@ class PlannerService:
         [item] = self._repo.add_plan_items(
             [replace(draft, position=position, added_by_user=True)], self._clock.now()
         )
+        return item
+
+    def add_control_item(self, subject: Subject, exam_item: int, limit_seconds: int) -> PlanItem:
+        """Контрольная, которую попросил ученик: пункт плана на сегодня (не в счёт 80/20)."""
+        day = self.today()
+        plan = self.plan(day)
+        assert plan is not None
+        position = max((i.position for i in plan.items), default=0) + 1
+        draft = self._draft(
+            day,
+            PlanItemKind.CONTROL,
+            subject,
+            1,
+            max(1, math.ceil(limit_seconds / 60)),
+            f"№{exam_item}: ты попросил контрольную «я это знаю»",
+            exam_item=exam_item,
+        )
+        [item] = self._repo.add_plan_items([replace(draft, position=position)], self._clock.now())
         return item
 
     def move_up(self, item_id: int, up: bool = True) -> None:

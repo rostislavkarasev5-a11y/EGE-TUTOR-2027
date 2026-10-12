@@ -144,7 +144,7 @@
 `ege calendar`, `ege discipline`, `ege control`. ИИ в Phase 7 к плану не подключается
 (`review_plan` — позже, по отдельному решению).
 
-Таблицы (миграция 0008): `calendar_window`, `calendar_event`, `daily_checkin`, `daily_plan`,
+Таблицы (миграция 0009): `calendar_window`, `calendar_event`, `daily_checkin`, `daily_plan`,
 `plan_item`, `discipline_day`, `control_session` (+ связь попыток контрольной); в профиль —
 `utc_offset_hours`.
 
