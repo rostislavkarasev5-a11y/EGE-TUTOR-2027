@@ -20,9 +20,9 @@ defaults:
   source_ref: "тест"
   verification_status: REVIEWED
 tasks:
-  - {exam_item: 6, statement: "Решите 3x = 12.", answer: 4, skills: [M06.algebraic]}
-  - {exam_item: 6, statement: "Решите 2x = 10.", answer: 5, skills: [M06.algebraic]}
-  - {exam_item: 6, statement: "Решите 2^x = 8.", answer: 3, skills: [M06.exponential]}
+  - {exam_item: 7, statement: "Решите 3x = 12.", answer: 4, skills: [M06.algebraic]}
+  - {exam_item: 7, statement: "Решите 2x = 10.", answer: 5, skills: [M06.algebraic]}
+  - {exam_item: 7, statement: "Решите 2^x = 8.", answer: 3, skills: [M06.exponential]}
   - {exam_item: 4, statement: "Вероятность орла.", answer: "0,5"}
 """
 
@@ -134,7 +134,7 @@ def test_recalculate_rebuilds_from_history(tutor, ids):
 def test_aggregates_by_topic_and_exam_item(tutor, ids):
     solve(tutor, ids["Решите 3x = 12."], "4")
     items = {a.key: a for a in tutor.mastery_by_exam_item(Subject.MATH_PROFILE)}
-    six = items["6"]
+    six = items["7"]
     assert 0 < six.value < 1  # изучен один навык из нескольких
     assert six.studied == 1 and six.total > 1
     assert items["4"].value is None

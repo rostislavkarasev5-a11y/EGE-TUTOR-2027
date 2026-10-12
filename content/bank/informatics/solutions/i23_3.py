@@ -1,19 +1,39 @@
 """Эталонное решение: информатика №23, задача 3 (стартовый банк, ИИ)."""
 
+from functools import cache
 
-def count(a, b, must, visited=False):
-    """Программы из a в b (команды +1, ×2, ×3), не проходящие через 30;
-    must — числа, хотя бы одно из которых должно встретиться в траектории."""
-    if a == 30 or a > b:
+ROADS = [
+    "АБ",
+    "АВ",
+    "АГ",
+    "БВ",
+    "БД",
+    "ВД",
+    "ВЕ",
+    "ГВ",
+    "ГЕ",
+    "ДЖ",
+    "ДЗ",
+    "ЕЖ",
+    "ЕИ",
+    "ЖЗ",
+    "ЖИ",
+    "ЖК",
+    "ЗК",
+    "ИК",
+    "ЕК",
+]
+
+
+@cache
+def paths(start: str, finish: str) -> int:
+    """Число путей из start в finish, не проходящих через город И."""
+    if start == "И":
         return 0
-    visited = visited or a in must
-    if a == b:
-        return 1 if visited else 0
-    return (
-        count(a + 1, b, must, visited)
-        + count(a * 2, b, must, visited)
-        + count(a * 3, b, must, visited)
-    )
+    if start == finish:
+        return 1
+    return sum(paths(b, finish) for a, b in ROADS if a == start)
 
 
-print(count(2, 60, {10, 15}))
+# Путь через Д = (путь из А в Д) × (путь из Д в К); Д стоит на пути не больше одного раза.
+print(paths("А", "Д") * paths("Д", "К"))

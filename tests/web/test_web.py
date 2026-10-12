@@ -263,7 +263,7 @@ def test_full_flow_import_review_solve(client):
 def test_solve_next_and_independent_answer(client):
     _import_sample(client)
     _review_all(client)
-    response = post(client, "/solve", {"subject": "math", "item": "6"})
+    response = post(client, "/solve", {"subject": "math", "item": "7"})
     attempt_id = str(response.url).rsplit("/", 1)[-1]
     done = post(client, f"/attempts/{attempt_id}/answer", {"answer": "6"})
     assert "Решено самостоятельно" in done.text
@@ -527,7 +527,7 @@ def test_progress_mistakes_and_repeat(client, tutor):
     assert "Пока нет решённых задач" in page.text
     assert "Повторять пока нечего" in client.get("/").text
 
-    task = next(t for t in tutor.tasks() if t.exam_item == 6 and t.subject.value == "MATH_PROFILE")
+    task = next(t for t in tutor.tasks() if t.exam_item == 7 and t.subject.value == "MATH_PROFILE")
     attempt_id = _start(client, task.id)
     wrong = post(client, f"/attempts/{attempt_id}/answer", {"answer": "-6"})
     assert "Ошибка записана" in wrong.text and "невнимательность" in wrong.text
@@ -575,7 +575,7 @@ def test_diagnostic_flow_on_site(client, tutor):
     assert "нет проверенных задач" in empty.text
 
     loaded = post(client, "/bank")
-    assert "Стартовый банк загружен: добавлено задач 138" in loaded.text
+    assert "Стартовый банк загружен: добавлено задач 141" in loaded.text
     assert "Начать диагностику" in loaded.text
     assert "добавлено задач 0" in post(client, "/bank").text  # повторно не добавляются
 
@@ -621,11 +621,11 @@ defaults:
   source: USER_MATERIAL
   source_ref: "тест"
 tasks:
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 2^x = 8."
     answer: 3
     skills: [M06.exponential]
-  - exam_item: 13
+  - exam_item: 14
     statement: "Решите уравнение и отберите корни на отрезке."
 """
 
