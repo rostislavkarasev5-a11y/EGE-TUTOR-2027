@@ -1,7 +1,6 @@
 """Эталонное решение: информатика №10, задача 3 (стартовый банк, ИИ)."""
 
-import re
+from ipaddress import ip_network
 
-with open("i10_3.txt", encoding="utf-8") as f:
-    words = re.findall(r"[а-яё]+", f.read().lower())
-print(sum(1 for w in words if "вод" in w and not w.startswith("вод")))
+net = ip_network("203.88.164.0/255.255.252.0")
+print(sum(1 for address in net if bin(int(address)).count("1") % 5 == 0))

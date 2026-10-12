@@ -1,13 +1,16 @@
 """Эталонное решение: информатика №23, задача 1 (стартовый банк, ИИ)."""
 
+from functools import cache
 
-def count(a, b):
-    """Число программ, переводящих a в b командами +1, +3, ×2."""
-    if a == b:
+ROADS = ["АБ", "АВ", "АГ", "БД", "ВД", "ВЕ", "ГЕ", "ДЖ", "ЕЖ", "ДК", "ЖК", "ЕК"]
+
+
+@cache
+def paths(town: str) -> int:
+    """Число путей из town в К по односторонним дорогам."""
+    if town == "К":
         return 1
-    if a > b:
-        return 0
-    return count(a + 1, b) + count(a + 3, b) + count(a * 2, b)
+    return sum(paths(b) for a, b in ROADS if a == town)
 
 
-print(count(2, 21))
+print(paths("А"))

@@ -25,7 +25,7 @@ tasks:
   - {exam_item: 1, statement: "Угол, средняя.", answer: 40, difficulty: 3, skills: [M01.triangles]}
   - {exam_item: 1, statement: "Угол, сложная.", answer: 50, difficulty: 4, skills: [M01.triangles]}
   - {exam_item: 2, statement: "Вектор.", answer: 5, difficulty: 3, skills: [M02.coordinates]}
-  - {exam_item: 13, statement: "Уравнение: сколько корней на отрезке?", answer: "2; 5",
+  - {exam_item: 14, statement: "Уравнение: сколько корней на отрезке?", answer: "2; 5",
      difficulty: 3, skills: [M13.root_selection], solution: "Полное решение."}
   - {exam_item: 3, statement: "Не проверена.", answer: 7, difficulty: 3,
      verification_status: UNVERIFIED, skills: [M03.polyhedra]}
@@ -64,11 +64,11 @@ def test_diagnostic_runs_to_the_end_and_saves_baseline(tutor, ids, fixed_clock):
     done = tutor.diagnostic_session(session.id)
     assert done.status == DiagnosticStatus.FINISHED
     assert done.stop_reason == StopReason.NO_TASKS
-    assert done.forecast is not None and done.forecast.max_points == 32
+    assert done.forecast is not None and done.forecast.max_points == 33
     results = {r.exam_item: r for r in tutor.diagnostic_results(session.id)}
-    assert len(results) == 19
+    assert len(results) == 20
     assert results[1].basis == ItemBasis.DIRECT and results[1].answered == 3
-    assert results[13].basis == ItemBasis.DIRECT
+    assert results[14].basis == ItemBasis.DIRECT
     assert results[3].basis == ItemBasis.NOT_ASSESSED  # есть только непроверенная
     assert results[1].probability > results[3].probability
     # попытки диагностики идут в mastery

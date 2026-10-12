@@ -11,7 +11,7 @@ defaults:
 
 tasks:
   - subject: math
-    exam_item: 6
+    exam_item: 7
     statement: "Решите уравнение 3x − 7 = 11."
     answer: 6
     solution: "3x = 18, x = 6."
@@ -37,7 +37,7 @@ tasks:
     skills: [M04.classical]
 
   - subject: math
-    exam_item: 7
+    exam_item: 8
     statement: "Найдите значение выражения log₂32 − log₃9."
     answer: 3
     solution: "log₂32 = 5, log₃9 = 2, 5 − 2 = 3."

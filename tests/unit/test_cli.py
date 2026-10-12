@@ -29,7 +29,7 @@ def test_init_creates_database(data_dir):
 def test_exam_shows_structure():
     result = invoke("exam", "math")
     assert result.exit_code == 0, result.output
-    assert "32" in result.output
+    assert "33" in result.output
     assert invoke("exam", "inf").exit_code == 0
     assert invoke("exam", "physics").exit_code == 1
 
@@ -300,8 +300,8 @@ def test_bank_and_diagnostic():
     assert "ege diagnose" in invoke("diagnostics").output  # ещё не было
     loaded = invoke("bank")
     assert loaded.exit_code == 0, loaded.output
-    assert "math_profile.yaml: добавлено 57" in loaded.output
-    assert "уже были в базе 57" in invoke("bank").output
+    assert "math_profile.yaml: добавлено 60" in loaded.output
+    assert "уже были в базе 60" in invoke("bank").output
 
     paused = runner.invoke(app, ["diagnose", "math"], input="?\n0\nсдаюсь\nвыход\n")
     assert paused.exit_code == 0, paused.output

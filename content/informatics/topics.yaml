@@ -1,4 +1,5 @@
 # Каталог тем и навыков: информатика (КЕГЭ).
+# Коды тем — постоянные идентификаторы, номера ЕГЭ 2027 у них могут отличаться (ADR-0020).
 # Тема I00 — Python ровно в объёме, нужном для экзамена; её навыки привязаны к заданиям, где нужен код.
 subject: INFORMATICS
 topics:
@@ -6,12 +7,12 @@ topics:
     title: "Python для КЕГЭ"
     exam_items: []
     skills:
-      - {code: I00.basics, title: "Переменные, ввод-вывод, арифметика", exam_items: [5, 6, 8, 12, 14, 15, 16, 23, 25]}
+      - {code: I00.basics, title: "Переменные, ввод-вывод, арифметика", exam_items: [5, 6, 8, 12, 13, 14, 15, 16, 23, 25]}
       - {code: I00.loops_conditions, title: "Циклы и условия", exam_items: [5, 8, 12, 14, 15, 17, 25], requires: [I00.basics]}
       - {code: I00.strings, title: "Строки и их методы", exam_items: [5, 12, 14, 24], requires: [I00.loops_conditions]}
       - {code: I00.lists, title: "Списки и сортировка", exam_items: [17, 26, 27], requires: [I00.loops_conditions]}
       - {code: I00.files, title: "Чтение данных из файла", exam_items: [17, 24, 26, 27], requires: [I00.lists]}
-      - {code: I00.functions_recursion, title: "Функции и рекурсия", exam_items: [16, 19, 20, 21, 23], requires: [I00.loops_conditions]}
+      - {code: I00.functions_recursion, title: "Функции и рекурсия", exam_items: [13, 16, 19, 20, 21, 23], requires: [I00.loops_conditions]}
       - {code: I00.itertools, title: "Перебор с itertools", exam_items: [8], requires: [I00.loops_conditions]}
   - code: I01
     title: Анализ информационных моделей
@@ -58,11 +59,11 @@ topics:
     exam_items: [9]
     skills:
       - {code: I09.spreadsheet_rows, title: "Анализ строк таблицы по условию"}
-  - code: I10
-    title: Поиск слов в текстовом документе
+  - code: I13
+    title: "Компьютерные сети: IP-адреса и маски"
     exam_items: [10]
     skills:
-      - {code: I10.text_search, title: "Поиск и подсчёт слов в текстовом редакторе"}
+      - {code: I13.ip_masks, title: "Адрес сети, маска, количество адресов"}
   - code: I11
     title: Вычисление информационного объёма сообщения
     exam_items: [11]
@@ -73,11 +74,11 @@ topics:
     exam_items: [12]
     skills:
       - {code: I12.string_rewriting, title: "Алгоритмы замены подстрок"}
-  - code: I13
-    title: IP-адреса и маски сети
+  - code: I23
+    title: "Анализ алгоритма: количество программ, дерево вариантов"
     exam_items: [13]
     skills:
-      - {code: I13.ip_masks, title: "Адрес сети, маска, количество адресов"}
+      - {code: I23.program_count, title: "Подсчёт программ: динамика и рекурсия"}
   - code: I14
     title: Позиционные системы счисления
     exam_items: [14]
@@ -114,11 +115,12 @@ topics:
     exam_items: [22]
     skills:
       - {code: I22.processes, title: "Время выполнения взаимозависимых процессов"}
-  - code: I23
-    title: Количество программ исполнителя
+  - code: IGRAPH
+    title: Алгоритмы на графах
     exam_items: [23]
     skills:
-      - {code: I23.program_count, title: "Подсчёт программ: динамика и рекурсия"}
+      - {code: IGRAPH.path_count, title: "Количество путей в ориентированном графе без циклов", requires: [I01.graphs]}
+      - {code: IGRAPH.shortest_paths, title: "Кратчайший путь во взвешенном графе", requires: [I01.graphs]}
   - code: I24
     title: Обработка символьных строк
     exam_items: [24]
@@ -139,3 +141,8 @@ topics:
     exam_items: [27]
     skills:
       - {code: I27.clusters, title: "Кластеры точек и их центры"}
+  - code: I10
+    title: Поиск слов в текстовом документе (вне номеров ЕГЭ 2027)
+    exam_items: []  # в КЕГЭ 2027 этого задания нет (ADR-0020)
+    skills:
+      - {code: I10.text_search, title: "Поиск и подсчёт слов в текстовом редакторе"}
