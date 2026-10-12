@@ -131,6 +131,12 @@ class PracticeService:
             raise AppError("нет задач для решения. Добавь задачи: ege import ФАЙЛ --apply")
         return self._least_practiced(candidates)[0]
 
+    def tasks_for_skill(self, skill_code: str) -> list[Task]:
+        """Проверенные задачи на навык: сначала те, которые решали реже и давнее всего."""
+        return self._least_practiced(
+            [t for t in self._candidates(None, None) if skill_code in t.skills]
+        )
+
     def task_for_skill(self, skill_code: str) -> Task | None:
         """Проверенная задача на навык: которую решали реже и давнее всего (для повторения)."""
         candidates = [t for t in self._candidates(None, None) if skill_code in t.skills]

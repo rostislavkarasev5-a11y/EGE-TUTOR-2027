@@ -102,6 +102,8 @@ class PlanItemKind(StrEnum):
     MISTAKE = "MISTAKE"
     PRACTICE = "PRACTICE"
     CONTROL = "CONTROL"
+    LESSON = "LESSON"  # следующий шаг учебного блока (Phase 8)
+    HOMEWORK = "HOMEWORK"  # домашка учебного блока (Phase 8)
 
 
 PLAN_ITEM_KIND_NAMES: dict[PlanItemKind, str] = {
@@ -110,6 +112,8 @@ PLAN_ITEM_KIND_NAMES: dict[PlanItemKind, str] = {
     PlanItemKind.MISTAKE: "задачи на ошибку",
     PlanItemKind.PRACTICE: "тренировка",
     PlanItemKind.CONTROL: "контрольная",
+    PlanItemKind.LESSON: "учебный блок",
+    PlanItemKind.HOMEWORK: "домашка",
 }
 
 

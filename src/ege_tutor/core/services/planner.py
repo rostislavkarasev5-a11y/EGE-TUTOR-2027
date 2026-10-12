@@ -26,6 +26,7 @@ from ege_tutor.core.domain import (
     DisciplineDay,
     DisciplineReport,
     EventKind,
+    LessonSuggestion,
     MasteryAggregate,
     PlanItem,
     PlanItemKind,
@@ -38,8 +39,12 @@ from ege_tutor.core.domain import (
 from ege_tutor.core.errors import AppError
 from ege_tutor.core.ports import Clock, Repository
 
-# Попытки этих режимов засчитываются в тренировку, повторения и задачи на ошибку.
+# Попытки этих режимов засчитываются в тренировку, повторения, задачи на ошибку и учёбу.
 TRAINING_MODES = frozenset({AttemptMode.PRACTICE, AttemptMode.HOMEWORK, AttemptMode.REVIEW})
+# Пункты, которые ученик выполняет на своей странице, а не через «решать».
+OWN_PAGE_KINDS = frozenset(
+    {PlanItemKind.DIAGNOSTIC, PlanItemKind.CONTROL, PlanItemKind.LESSON, PlanItemKind.HOMEWORK}
+)
 MAX_NOTE_CHARS = 300
 MAX_PLAN_DAYS_AHEAD = 60
 SUBJECT_NAMES = {Subject.MATH_PROFILE: "математика", Subject.INFORMATICS: "информатика"}
@@ -54,6 +59,8 @@ class PlannerSources:
     task_for_skill: Callable[[str], Task | None]
     diagnostic_tasks: Callable[[Subject], int]
     profile_offset: Callable[[], int | None]
+    # Учебный блок по предмету для плана (Phase 8, ADR-0022).
+    lesson_suggestion: Callable[[Subject], LessonSuggestion | None] = lambda _: None
 
 
 def _minute(t: dt.time) -> int:
@@ -413,7 +420,18 @@ class PlannerService:
                 taken_skills.add(entry.skill_code)
                 out.append(placed)
 
-        # 4. Тренировка слабых номеров, время делится между предметами по разрыву.
+        # 4. Учебный блок (Phase 8): начатый или новая тема — один в день.
+        if not any(i.kind == PlanItemKind.LESSON for i in kept):
+            shares = self.subject_shares(subjects) if subjects else {}
+            for subject in sorted(subjects, key=lambda s: -shares[s]):
+                lesson = self._lesson_item(day, subject, budget - used)
+                if lesson is not None and lesson.skill_code not in taken_skills:
+                    used += lesson.minutes
+                    taken_skills.add(lesson.skill_code or "")
+                    out.append(lesson)
+                    break
+
+        # 5. Тренировка слабых номеров, время делится между предметами по разрыву.
         left = budget - used
         if left <= 0 or not subjects:
             return out
@@ -484,6 +502,55 @@ class PlannerService:
             remaining -= place(subject, number, why, remaining)
         return out
 
+    def skill_task_minutes(self, subject: Subject, skill_code: str) -> int:
+        """Время на задачу навыка: по нормативу его первого номера ЕГЭ."""
+        skill = next(
+            (k for t in self._catalog.topics_of(subject) for k in t.skills if k.code == skill_code),
+            None,
+        )
+        if skill is None or not skill.exam_items:
+            return self.config.plan.default_task_minutes
+        return self.task_minutes(subject, skill.exam_items[0])
+
+    def _lesson_item(self, day: dt.date, subject: Subject, left: int) -> PlanItem | None:
+        suggestion = self._src.lesson_suggestion(subject)
+        if suggestion is None:
+            return None
+        per_task = self.skill_task_minutes(subject, suggestion.skill_code)
+        reading = suggestion.reading_minutes
+        tasks = min(suggestion.tasks, self.config.plan.max_tasks_per_item * 2)
+        if reading + tasks * per_task > left:
+            tasks = max(0, (left - reading) // per_task)
+        if tasks < 1 and not (reading and reading <= left):
+            return None
+        return self._draft(
+            day,
+            PlanItemKind.LESSON,
+            subject,
+            max(1, tasks),
+            reading + tasks * per_task,
+            suggestion.reason,
+            skill_code=suggestion.skill_code,
+        )
+
+    def add_homework_item(
+        self, day: dt.date, subject: Subject, skill_code: str, tasks: int, title: str
+    ) -> PlanItem:
+        """Домашка учебного блока: обязательный пункт на день сдачи (ADR-0022)."""
+        position = max((i.position for i in self._repo.plan_items(day)), default=0) + 1
+        draft = self._draft(
+            day,
+            PlanItemKind.HOMEWORK,
+            subject,
+            tasks,
+            tasks * self.skill_task_minutes(subject, skill_code),
+            f"домашка учебного блока «{title}»",
+            skill_code=skill_code,
+        )
+        draft = replace(draft, position=position, mandatory=True)
+        [item] = self._repo.add_plan_items([draft], self._clock.now())
+        return item
+
     def _assign_mandatory(self, items: list[PlanItem], budget: int) -> list[PlanItem]:
         """Обязательные — первые пункты, пока они укладываются в mandatory_share бюджета."""
         cap = budget * self.config.plan.mandatory_share
@@ -549,6 +616,7 @@ class PlannerService:
             i.id
             for i in plan.items
             if i.stored_status == PlanItemStatus.PLANNED
+            and i.kind not in (PlanItemKind.CONTROL, PlanItemKind.HOMEWORK)
             and not i.added_by_user
             and i.carried_from is None
             and i.done_tasks == 0
@@ -612,6 +680,9 @@ class PlannerService:
     def _matches(item: PlanItem, attempt: Attempt, task: Task) -> bool:
         if item.kind == PlanItemKind.PRACTICE:
             return attempt.subject == item.subject and attempt.exam_item == item.exam_item
+        # Домашку засчитывают только попытки домашки, остальные пункты — любые другие.
+        if (attempt.mode == AttemptMode.HOMEWORK) != (item.kind == PlanItemKind.HOMEWORK):
+            return False
         return item.skill_code is not None and item.skill_code in task.skills
 
     # ── правило 80/20 ───────────────────────────────────────────────────────
