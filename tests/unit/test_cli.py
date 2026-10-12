@@ -330,3 +330,75 @@ def test_ai_commands_without_ai(monkeypatch):
     assert generated.exit_code == 1
     assert "ИИ недоступен" in generated.output
     assert invoke("explain", "999").exit_code == 1
+
+
+def test_plan_calendar_and_discipline():
+    """Phase 7: чек-ин, расписание, план на день, свой пункт, причина, дисциплина."""
+    assert invoke("bank").exit_code == 0
+    for subject in ("math", "inf"):
+        assert runner.invoke(app, ["diagnose", subject], input="закончить\n").exit_code == 0
+
+    added = invoke("window-add", "пн", "16:30", "19:00")
+    assert added.exit_code == 0, added.output
+    assert invoke("window-add", "xx", "16:30", "19:00").exit_code == 1
+    assert invoke("window-add", "вт", "25:00", "26:00").exit_code == 1
+    event = invoke("event-add", "training", "бассейн", "2030-01-01 17:00", "2030-01-01 18:00")
+    assert event.exit_code == 0, event.output
+    assert invoke("event-add", "party", "x", "2030-01-01 17:00", "2030-01-01 18:00").exit_code == 1
+    shown = invoke("calendar")
+    assert "16:30–19:00" in shown.output and "Часовой пояс" in shown.output
+    assert invoke("window-remove", "1").exit_code == 0
+    assert invoke("event-remove", "1").exit_code == 0
+
+    checked = invoke("checkin", "2", "--minutes", "60")
+    assert checked.exit_code == 0, checked.output
+    assert invoke("checkin", "9").exit_code == 1
+
+    shown = invoke("plan", "--rebuild")
+    assert shown.exit_code == 0, shown.output
+    assert "План на" in shown.output and "Дисциплина" in shown.output
+    assert invoke("plan-add", "inf", "27", "--tasks", "3").exit_code == 1  # правило 80/20
+    assert invoke("plan-add", "math", "1").exit_code == 0
+
+    item_id = TutorApp.create().daily_plan().items[0].id
+    stopped = runner.invoke(app, ["plan-do", str(item_id)], input="выход\n")
+    assert stopped.exit_code == 0, stopped.output
+    assert invoke("plan-do", "99999").exit_code == 1
+
+    excused = invoke("excuse", "температура")
+    assert excused.exit_code == 0 and "перенесены" in excused.output
+    assert invoke("discipline").exit_code == 0
+
+
+def test_control_without_enough_tasks_and_profile_time_zone():
+    assert invoke("bank").exit_code == 0
+    refused = invoke("control", "math", "1")
+    assert refused.exit_code == 1 and "нечем" in refused.output
+    assert "Контрольных ещё не было" in invoke("controls").output
+    zone = invoke("profile", "--utc-offset", "5")
+    assert zone.exit_code == 0 and "UTC+5" in zone.output
+    assert invoke("profile", "--utc-offset", "20").exit_code == 1
+
+
+def test_control_loop(monkeypatch):
+    """Контрольная в терминале: подсказок нет, прервать и продолжить, закончить."""
+    from ege_tutor.core.services.control import ControlService
+
+    original = ControlService.__init__
+
+    def three_tasks(self, repository, clock, config, catalog):
+        original(
+            self, repository, clock, config.model_copy(update={"tasks": 3, "min_tasks": 3}), catalog
+        )
+
+    monkeypatch.setattr(ControlService, "__init__", three_tasks)
+    assert invoke("bank").exit_code == 0
+    paused = runner.invoke(app, ["control", "math", "1"], input="?\n0\nвыход\n")
+    assert paused.exit_code == 0, paused.output
+    assert "подсказок нет" in paused.output and "Продолжить: ege control math 1" in paused.output
+    finished = runner.invoke(app, ["control", "math", "1"], input="сдаюсь\nзакончить\n")
+    assert finished.exit_code == 0, finished.output
+    assert "не засчитана" in finished.output
+    listed = invoke("controls")
+    assert "Контрольные" in listed.output
+    assert invoke("controls", "1").exit_code == 0
