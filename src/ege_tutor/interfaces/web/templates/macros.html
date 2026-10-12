@@ -11,6 +11,9 @@
   </div>
   <h2 class="sr-only">Задача {{ task.id }} · {{ SUBJECT_NAMES[task.subject] }} · задание №{{ task.exam_item }}</h2>
   <div class="statement task-statement">{{ task.statement }}</div>
+  {% for asset in task.assets if asset.file_name|is_image %}
+  <img class="task-figure" src="/tasks/{{ task.id }}/files/{{ task.assets.index(asset) }}" alt="Рисунок к задаче">
+  {% endfor %}
   <p class="meta">Источник: {{ source(task) }} — {{ task.source_ref }}</p>
   {% if task.assets %}
   <p class="meta files">Файлы:

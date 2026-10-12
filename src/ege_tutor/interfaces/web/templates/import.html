@@ -3,12 +3,24 @@
 {% block content %}
 <h1>Импорт задач</h1>
 <section class="card">
+  <h2>Задачи с Решу ЕГЭ</h2>
+  <ol>
+    <li>На сайте Решу ЕГЭ составь вариант из нужных подразделов и открой его.</li>
+    <li>Внизу нажми «Завершить работу, свериться с ответами, увидеть решения».</li>
+    <li>На странице результатов нажми <kbd>Ctrl</kbd>+<kbd>S</kbd> и выбери «Веб-страница, только HTML».</li>
+    <li>Загрузи сохранённый файл <code>.html</code> ниже. Рисунки сайт скачает сам.</li>
+  </ol>
+  <p class="meta">Задачи остаются только в твоей базе на сервере и помечаются источником «Решу ЕГЭ».</p>
+</section>
+
+<section class="card">
+  <h2>Файл задач</h2>
   <p>Загрузи файл <code>.yaml</code> или <code>.csv</code> по шаблону из папки
     <code>content/templates</code>. Если к задачам есть файлы (например, <code>numbers.txt</code>),
     упакуй файл задач и эти файлы в архив <code>.zip</code>: файл задач — в корень архива.</p>
   <form method="post" action="/import/preview" enctype="multipart/form-data" class="row">
     {{ csrf_field() }}
-    <input type="file" name="file" accept=".yaml,.yml,.csv,.zip" required>
+    <input type="file" name="file" accept=".html,.htm,.yaml,.yml,.csv,.zip" required>
     <button type="submit">Проверить файл</button>
   </form>
   <p class="meta">Сначала будет только проверка, в базу ничего не запишется.</p>

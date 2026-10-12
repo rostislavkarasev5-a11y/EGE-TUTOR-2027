@@ -402,3 +402,24 @@ def test_control_loop(monkeypatch):
     listed = invoke("controls")
     assert "Контрольные" in listed.output
     assert invoke("controls", "1").exit_code == 0
+
+
+def test_import_reshu_ege_page(tmp_path):
+    from tests.integration.test_reshu_ege import MATH_TITLE, _page, _problem, _row
+
+    page = _page(
+        MATH_TITLE,
+        [_row(1, "900010", 4, "Задания 4. Вероятность. Классическое определение вероятности", "")],
+        [_problem(1, "900010", 4, "<p>В урне 3 белых и 1 чёрный шар.", "<p>Ответ: 0,75.", "0,75")],
+    )
+    saved = tmp_path / "Вариант.html"
+    saved.write_text(page, encoding="utf-8")
+    preview = invoke("import", str(saved))
+    assert preview.exit_code == 0, preview.output
+    assert "Страница Решу ЕГЭ: задач 1" in preview.output
+    assert f"ege import {saved} --apply" in preview.output.replace("\n", "")
+    applied = invoke("import", str(saved), "--apply")
+    assert applied.exit_code == 0, applied.output
+    assert "Добавлено задач: 1" in applied.output
+    assert not (tmp_path / "reshu_ege.yaml").exists()  # рядом со страницей ничего не появилось
+    assert invoke("import", str(tmp_path / "нет.html")).exit_code == 1

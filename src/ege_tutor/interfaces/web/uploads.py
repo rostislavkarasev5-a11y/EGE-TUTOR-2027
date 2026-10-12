@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
 TASK_SUFFIXES = {".yaml", ".yml", ".csv"}
+PAGE_SUFFIXES = {".html", ".htm"}  # сохранённая страница Решу ЕГЭ (ADR-0021)
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 MAX_ZIP_FILES = 500
 MAX_UNPACKED_BYTES = 200 * 1024 * 1024
@@ -102,15 +103,22 @@ def _unpack_zip(archive: Path, target: Path) -> None:
 
 
 def save_upload(root: Path, file_name: str, stream: BinaryIO) -> tuple[str, Path]:
-    """Сохранить загрузку. Возвращает (токен загрузки, путь к файлу задач)."""
+    """Сохранить загрузку. Возвращает (токен загрузки, путь к файлу задач или странице)."""
     name = PurePosixPath(file_name.replace("\\", "/")).name
     suffix = PurePosixPath(name).suffix.lower()
-    if suffix not in TASK_SUFFIXES | {".zip"}:
-        raise UploadError("нужен файл .yaml, .csv или архив .zip с файлом задач и файлами к нему")
+    if suffix not in TASK_SUFFIXES | PAGE_SUFFIXES | {".zip"}:
+        raise UploadError(
+            "нужен файл .yaml, .csv, архив .zip с файлом задач и файлами к нему "
+            "или сохранённая страница Решу ЕГЭ (.html)"
+        )
     token = secrets.token_urlsafe(24)
     folder = root / token
     folder.mkdir(parents=True)
     try:
+        if suffix in PAGE_SUFFIXES:
+            target = folder / "page.html"  # своё имя: рядом появятся reshu_ege.yaml и рисунки
+            _copy_upload(stream, target)
+            return token, target
         if suffix != ".zip":
             target = folder / name
             _copy_upload(stream, target)
@@ -131,6 +139,10 @@ def save_upload(root: Path, file_name: str, stream: BinaryIO) -> tuple[str, Path
     except BaseException:
         shutil.rmtree(folder, ignore_errors=True)
         raise
+
+
+def is_page(path: Path) -> bool:
+    return path.suffix.lower() in PAGE_SUFFIXES
 
 
 def find_task_file(root: Path, token: str) -> Path:

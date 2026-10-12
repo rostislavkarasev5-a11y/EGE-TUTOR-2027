@@ -7,6 +7,7 @@ CORE зависит только от этих протоколов, а не о�
 
 from ege_tutor.core.ports.ai import AIService
 from ege_tutor.core.ports.clock import Clock
+from ege_tutor.core.ports.remote_files import RemoteFileError, RemoteFiles
 from ege_tutor.core.ports.repository import Repository, RepositoryError
 from ege_tutor.core.ports.sandbox import (
     RunRequest,
@@ -21,6 +22,8 @@ from ege_tutor.core.ports.speech import SpeechService
 __all__ = [
     "AIService",
     "Clock",
+    "RemoteFileError",
+    "RemoteFiles",
     "Repository",
     "RepositoryError",
     "RunRequest",

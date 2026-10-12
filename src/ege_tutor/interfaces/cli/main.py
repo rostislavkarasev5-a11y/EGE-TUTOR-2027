@@ -1,7 +1,9 @@
 """CLI на Typer. Только ввод/вывод: вся логика — в TutorApp."""
 
 import datetime as dt
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -57,6 +59,7 @@ SUBJECT_NAMES = {
     Subject.MATH_PROFILE: "Математика (профиль)",
     Subject.INFORMATICS: "Информатика",
 }
+HTML_SUFFIXES = {".html", ".htm"}
 SUBJECT_SHORT = {Subject.MATH_PROFILE: "М", Subject.INFORMATICS: "И"}
 SUBJECT_HELP = "Предмет: math или informatics."
 STATUS_NAMES = {
@@ -326,20 +329,49 @@ def _print_report(report: ImportReport) -> None:
 
 @app.command(name="import")
 def import_(
-    file: Annotated[Path, typer.Argument(help="Файл с задачами: .yaml или .csv.")],
+    file: Annotated[
+        Path, typer.Argument(help="Файл с задачами (.yaml, .csv) или страница Решу ЕГЭ (.html).")
+    ],
     apply: Annotated[
         bool, typer.Option("--apply", help="Записать годные задачи в базу (без него — проверка).")
     ] = False,
 ) -> None:
-    """Проверить файл с задачами и (с --apply) добавить их в базу."""
+    """Проверить файл с задачами и (с --apply) добавить их в базу.
+
+    Можно указать и сохранённую страницу результатов Решу ЕГЭ (.html): она сначала
+    переводится в файл задач, рисунки скачиваются с сайта (ADR-0021).
+    """
     tutor = _tutor()
+    if file.suffix.lower() in HTML_SUFFIXES:
+        with tempfile.TemporaryDirectory() as folder:
+            page = Path(folder) / "page.html"
+            try:
+                shutil.copyfile(file, page)
+            except OSError as e:
+                raise _fail(f"не удалось открыть файл: {e}") from e
+            try:
+                conversion = tutor.convert_reshu_page(page)
+            except AppError as e:
+                raise _fail(str(e)) from e
+            console.print(
+                f"Страница Решу ЕГЭ: задач {conversion.problems}, "
+                f"скачано рисунков и файлов {conversion.files_downloaded}."
+            )
+            for problem in conversion.file_errors:
+                console.print(f"[yellow]Не скачалось:[/] {escape(problem)}")
+            _import_file(tutor, conversion.task_file, apply, shown=file)
+        return
+    _import_file(tutor, file, apply, shown=file)
+
+
+def _import_file(tutor: TutorApp, file: Path, apply: bool, shown: Path) -> None:
     if not apply:
         report = tutor.preview_import(file)
         _print_report(report)
         if report.accepted and not report.file_error:
             console.print(
                 "\nЭто была только проверка. Чтобы добавить годные задачи, запусти:\n"
-                f"  [bold]ege import {file} --apply[/]"
+                f"  [bold]ege import {shown} --apply[/]"
             )
         raise typer.Exit(code=1 if report.file_error else 0)
 
