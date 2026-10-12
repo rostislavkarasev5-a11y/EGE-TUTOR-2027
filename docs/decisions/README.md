@@ -28,4 +28,4 @@ ADR — короткая запись одного архитектурного 
 | [0016](0016-starter-bank-and-diagnostics.md) | Стартовый банк задач и адаптивная диагностика: детали | Accepted |
 | [0017](0017-ai-via-yandex-ai-studio.md) | ИИ-слой через Yandex AI Studio | Accepted |
 | [0018](0018-voice-tutor-speechkit.md) | Разговор с репетитором и голос через Yandex SpeechKit | Accepted |
-| [0021](0021-reshu-ege-page-import.md) | Импорт задач со страниц Решу ЕГЭ и теория по подразделам | Proposed |
+| [0021](0021-reshu-ege-page-import.md) | Импорт задач со страниц Решу ЕГЭ и теория по подразделам | Accepted |
