@@ -15,3 +15,5 @@ class StudentProfile:
 
     display_name: str | None = None
     targets: dict[Subject, int] = field(default_factory=_default_targets)
+    # Часовой пояс (часы от UTC) для «сегодня» в плане; None — по умолчанию из planner.toml.
+    utc_offset_hours: int | None = None

@@ -1,5 +1,6 @@
 """Сайт (ADR-0013): вход, защита форм, решение задач, импорт, копия базы."""
 
+import datetime as dt
 import io
 import re
 import zipfile
@@ -7,7 +8,7 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from ege_tutor.core.domain import Subject
+from ege_tutor.core.domain import PlanItemKind, Subject
 from ege_tutor.interfaces.web.app import create_app
 from ege_tutor.interfaces.web.auth import LoginThrottle, PasswordStore, web_dir
 from tests.conftest import REPO_ROOT
@@ -814,3 +815,107 @@ def test_design_uses_own_fonts_and_marks_current_page(client):
     assert '<a href="/profile" class="active"' in profile
     assert '<a href="/">Главная</a>' in profile
     assert 'style="' not in home
+
+
+# ── Phase 7 (ADR-0019): план, чек-ин, расписание, контрольная ──
+
+
+def _ready_for_plan(tutor):
+    tutor.install_starter_bank()
+    for subject in Subject:
+        tutor.finish_diagnostic(tutor.start_diagnostic(subject).id)
+
+
+def test_home_shows_plan_and_discipline(client, tutor):
+    page = client.get("/").text
+    assert "План на сегодня" in page and "дисциплина" in page
+    assert 'href="/plan"' in page and 'href="/calendar"' in page
+    assert 'style="' not in page
+
+
+def test_plan_page_checkin_and_start(client, tutor):
+    _ready_for_plan(tutor)
+    page = client.get("/plan").text
+    assert "Время на сегодня: 60 мин" in page
+    assert "Почему" in page and "тренировка" in page
+    assert 'style="' not in page
+    saved = post(client, "/checkin", {"fatigue": "4", "available": "", "note": "контрольная"})
+    assert "Чек-ин сохранён" in saved.text
+    assert "выходит 45 мин" in saved.text  # план ещё старый — подсказка перестроить
+    rebuilt = post(client, "/plan/rebuild")
+    assert "Время на сегодня: 45 мин" in rebuilt.text
+    item = next(i for i in tutor.daily_plan().items if i.kind == PlanItemKind.PRACTICE)
+    started = post(client, f"/plan/items/{item.id}/start")
+    assert re.search(r"/attempts/\d+$", str(started.url))
+
+
+def test_plan_80_20_errors_are_shown(client, tutor):
+    _ready_for_plan(tutor)
+    plan = tutor.daily_plan()
+    mandatory = next(i for i in plan.items if i.mandatory)
+    removed = post(client, f"/plan/items/{mandatory.id}/remove")
+    assert "обязательный пункт убрать нельзя" in removed.text
+    tomorrow = (tutor.today() + dt.timedelta(days=1)).isoformat()
+    moved = post(client, f"/plan/items/{mandatory.id}/move", {"day": tomorrow, "note": ""})
+    assert "напиши причину" in moved.text
+    moved = post(client, f"/plan/items/{mandatory.id}/move", {"day": tomorrow, "note": "кружок"})
+    assert "Пункт перенесён" in moved.text
+    added = post(client, "/plan/add", {"subject": "math", "item": "1", "tasks": "1"})
+    assert "Пункт добавлен" in added.text
+    too_much = post(client, "/plan/add", {"subject": "math", "item": "2", "tasks": "4"})
+    assert "80/20" in too_much.text
+    excused = post(client, "/plan/excuse-day", {"note": "заболел"})
+    assert "День отмечен объективной причиной" in excused.text
+
+
+def test_calendar_windows_and_events(client, tutor):
+    added = post(client, "/calendar/windows", {"weekday": "2", "start": "16:00", "end": "18:00"})
+    assert "Окно для учёбы добавлено" in added.text and "16:00–18:00" in added.text
+    bad = post(client, "/calendar/windows", {"weekday": "2", "start": "19:00", "end": "18:00"})
+    assert "позже, чем начинается" in bad.text
+    day = tutor.today().isoformat()
+    event = post(
+        client,
+        "/calendar/events",
+        {
+            "kind": "TRAINING",
+            "title": "бассейн",
+            "starts_at": f"{day}T17:00",
+            "ends_at": f"{day}T17:30",
+            "blocks_study": "on",
+        },
+    )
+    assert "Событие добавлено" in event.text and "бассейн" in event.text
+    assert tutor.day_budget().minutes == 90
+    window = tutor.calendar_windows()[0]
+    deleted = post(client, f"/calendar/windows/{window.id}/delete")
+    assert "Окно удалено" in deleted.text
+    assert 'style="' not in deleted.text
+
+
+def test_control_flow_on_site(client, tutor):
+    _ready_for_plan(tutor)
+    refused = post(client, "/control/start", {"subject": "math", "item": "1"})
+    assert "нечем" in refused.text
+    tutor.control.config = tutor.control.config.model_copy(update={"tasks": 3, "min_tasks": 3})
+    response = post(client, "/control/start", {"subject": "math", "item": "1"})
+    for _ in range(3):
+        page = response.text
+        assert "Контрольная «я это знаю»" in page and "Подсказка" not in page
+        attempt_id = int(str(response.url).rsplit("/", 1)[-1])
+        task = tutor.task(tutor.attempt(attempt_id).task_id)
+        response = post(client, f"/attempts/{attempt_id}/answer", {"answer": task.answer})
+    assert "Засчитана" in response.text and "засчитано 3 из 3" in response.text
+    assert "Контрольные" in client.get("/control").text
+
+
+def test_profile_time_zone(client, tutor):
+    saved = post(
+        client,
+        "/profile",
+        {"display_name": "", "target_math": "90", "target_informatics": "90", "utc_offset": "5"},
+    )
+    assert "Профиль сохранён" in saved.text
+    assert tutor.utc_offset_hours() == 5
+    bad = post(client, "/profile", {"utc_offset": "abc"})
+    assert "Часовой пояс" in bad.text

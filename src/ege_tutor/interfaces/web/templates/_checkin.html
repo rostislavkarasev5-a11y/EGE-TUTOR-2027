@@ -1,0 +1,22 @@
+<section class="card">
+  <h2>Чек-ин</h2>
+  {% if checkin %}
+  <p>Сегодня: усталость {{ checkin.fatigue }}/5{% if checkin.available_minutes is not none %}, свободно {{ checkin.available_minutes }} мин{% endif %}{% if checkin.note %} · {{ checkin.note }}{% endif %}. Можно исправить.</p>
+  {% else %}
+  <p class="meta">Как ты сегодня? Усталость уменьшает время в плане (4 из 5 — на четверть, 5 — вдвое).</p>
+  {% endif %}
+  <form method="post" action="/checkin" class="row">
+    {{ csrf_field() }}
+    <input type="hidden" name="back" value="{{ request.url.path }}">
+    <label>Усталость
+      <select name="fatigue">
+        {% for n, text in [(1, "1 — бодр"), (2, "2"), (3, "3 — обычно"), (4, "4"), (5, "5 — очень устал")] %}
+        <option value="{{ n }}" {% if (checkin and checkin.fatigue == n) or (not checkin and n == 2) %}selected{% endif %}>{{ text }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Реально есть минут <input type="number" name="available" min="0" max="1440" value="{{ checkin.available_minutes if checkin and checkin.available_minutes is not none else '' }}" placeholder="не знаю"></label>
+    <input type="text" name="note" maxlength="500" placeholder="Комментарий" aria-label="Комментарий" value="{{ checkin.note if checkin and checkin.note else '' }}">
+    <button type="submit" class="secondary">Сохранить</button>
+  </form>
+</section>

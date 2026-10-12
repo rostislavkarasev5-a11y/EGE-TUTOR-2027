@@ -21,15 +21,23 @@ from ege_tutor.core.domain import (
     Attempt,
     AttemptMode,
     AttemptStatus,
+    CalendarEvent,
+    CalendarWindow,
     Catalog,
     ChatMessage,
     ChatRole,
     ClassifiedBy,
     CodeRun,
     CodeVerdict,
+    ControlSession,
+    ControlStatus,
+    DailyCheckin,
+    DailyPlan,
     DiagnosticItemResult,
     DiagnosticSession,
     DiagnosticStatus,
+    DisciplineDay,
+    EventKind,
     ExamSpec,
     ExamSpecItem,
     Forecast,
@@ -44,6 +52,8 @@ from ege_tutor.core.domain import (
     MistakePattern,
     Part2Grade,
     Part2GradeStatus,
+    PlanItem,
+    PlanItemStatus,
     Prediction,
     Skill,
     StopReason,
@@ -65,11 +75,18 @@ from ege_tutor.db.models import (
     AICallRow,
     AINoteRow,
     AttemptRow,
+    CalendarEventRow,
+    CalendarWindowRow,
     ChatMessageRow,
     CodeRunRow,
+    ControlAttemptRow,
+    ControlSessionRow,
+    DailyCheckinRow,
+    DailyPlanRow,
     DiagnosticAttemptRow,
     DiagnosticResultRow,
     DiagnosticSessionRow,
+    DisciplineDayRow,
     ExamSpecItemRow,
     ExamSpecRow,
     HintEventRow,
@@ -79,6 +96,7 @@ from ege_tutor.db.models import (
     MistakePatternRow,
     MistakeRow,
     Part2GradeRow,
+    PlanItemRow,
     PredictionRow,
     SkillExamItemRow,
     SkillPrerequisiteRow,
@@ -152,6 +170,7 @@ class SqlRepository:
         default = StudentProfile()
         return StudentProfile(
             display_name=student.display_name if student else None,
+            utc_offset_hours=student.utc_offset_hours if student else None,
             targets={
                 subject: targets.get(subject, default.targets[subject]) for subject in Subject
             },
@@ -162,6 +181,7 @@ class SqlRepository:
             self._ensure_subjects(s)
             student = s.get(StudentRow, 1) or StudentRow(id=1)
             student.display_name = profile.display_name
+            student.utc_offset_hours = profile.utc_offset_hours
             s.add(student)
             for subject, score in profile.targets.items():
                 s.merge(StudentTargetRow(subject=subject, target_score=score))
@@ -1378,3 +1398,375 @@ class SqlRepository:
         with self._session() as s:
             row = s.get(Part2GradeRow, grade_id)
             return self._part2_grade(row) if row else None
+
+    # ── расписание, план, дисциплина, контрольная (Phase 7) ─────────────────
+
+    def finished_attempts_between(self, start: dt.datetime, end: dt.datetime) -> list[Attempt]:
+        query = (
+            select(AttemptRow)
+            .options(selectinload(AttemptRow.task))
+            .where(
+                AttemptRow.status.in_((AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP)),
+                AttemptRow.finished_at >= start,
+                AttemptRow.finished_at < end,
+            )
+            .order_by(AttemptRow.finished_at, AttemptRow.id)
+        )
+        with self._session() as s:
+            return [self._attempt(row) for row in s.scalars(query)]
+
+    @staticmethod
+    def _window(row: CalendarWindowRow) -> CalendarWindow:
+        return CalendarWindow(
+            id=row.id,
+            weekday=row.weekday,
+            start=dt.time(row.start_minute // 60, row.start_minute % 60),
+            end=dt.time.max
+            if row.end_minute == 1440
+            else dt.time(row.end_minute // 60, row.end_minute % 60),
+        )
+
+    def list_windows(self) -> list[CalendarWindow]:
+        query = select(CalendarWindowRow).order_by(
+            CalendarWindowRow.weekday, CalendarWindowRow.start_minute, CalendarWindowRow.id
+        )
+        with self._session() as s:
+            return [self._window(row) for row in s.scalars(query)]
+
+    def add_window(self, weekday: int, start_minute: int, end_minute: int) -> CalendarWindow:
+        with self._session.begin() as s:
+            row = CalendarWindowRow(
+                weekday=weekday, start_minute=start_minute, end_minute=end_minute
+            )
+            s.add(row)
+            s.flush()
+            return self._window(row)
+
+    def delete_window(self, window_id: int) -> bool:
+        with self._session.begin() as s:
+            result = s.execute(delete(CalendarWindowRow).where(CalendarWindowRow.id == window_id))
+            return result.rowcount > 0
+
+    @staticmethod
+    def _event(row: CalendarEventRow) -> CalendarEvent:
+        return CalendarEvent(
+            id=row.id,
+            kind=row.kind,
+            title=row.title,
+            starts_at=row.starts_at,
+            ends_at=row.ends_at,
+            blocks_study=row.blocks_study,
+        )
+
+    def list_events(self, start: dt.datetime, end: dt.datetime) -> list[CalendarEvent]:
+        query = (
+            select(CalendarEventRow)
+            .where(CalendarEventRow.starts_at < end, CalendarEventRow.ends_at > start)
+            .order_by(CalendarEventRow.starts_at, CalendarEventRow.id)
+        )
+        with self._session() as s:
+            return [self._event(row) for row in s.scalars(query)]
+
+    def add_event(
+        self,
+        *,
+        kind: EventKind,
+        title: str,
+        starts_at: dt.datetime,
+        ends_at: dt.datetime,
+        blocks_study: bool,
+        at: dt.datetime,
+    ) -> CalendarEvent:
+        with self._session.begin() as s:
+            row = CalendarEventRow(
+                kind=kind,
+                title=title,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                blocks_study=blocks_study,
+                created_at=at,
+            )
+            s.add(row)
+            s.flush()
+            return self._event(row)
+
+    def delete_event(self, event_id: int) -> bool:
+        with self._session.begin() as s:
+            result = s.execute(delete(CalendarEventRow).where(CalendarEventRow.id == event_id))
+            return result.rowcount > 0
+
+    def get_checkin(self, day: dt.date) -> DailyCheckin | None:
+        with self._session() as s:
+            row = s.get(DailyCheckinRow, day)
+            if row is None:
+                return None
+            return DailyCheckin(row.day, row.fatigue, row.available_minutes, row.note)
+
+    def save_checkin(self, checkin: DailyCheckin, at: dt.datetime) -> None:
+        with self._session.begin() as s:
+            s.merge(
+                DailyCheckinRow(
+                    day=checkin.day,
+                    fatigue=checkin.fatigue,
+                    available_minutes=checkin.available_minutes,
+                    note=checkin.note,
+                    updated_at=at,
+                )
+            )
+
+    @staticmethod
+    def _plan_item(row: PlanItemRow) -> PlanItem:
+        return PlanItem(
+            id=row.id,
+            day=row.day,
+            position=row.position,
+            kind=row.kind,
+            subject=row.subject,
+            exam_item=row.exam_item,
+            skill_code=row.skill_code,
+            tasks=row.tasks,
+            minutes=row.minutes,
+            mandatory=row.mandatory,
+            added_by_user=row.added_by_user,
+            stored_status=row.status,
+            reason=row.reason,
+            note=row.note,
+            carried_from=row.carried_from,
+        )
+
+    def get_plan(self, day: dt.date) -> DailyPlan | None:
+        with self._session() as s:
+            row = s.get(DailyPlanRow, day)
+            if row is None:
+                return None
+            plan = DailyPlan(row.day, row.built_at, row.budget_minutes, row.explanation)
+        return DailyPlan(
+            plan.day,
+            plan.built_at,
+            plan.budget_minutes,
+            plan.explanation,
+            tuple(self.plan_items(day)),
+        )
+
+    def save_plan(
+        self, day: dt.date, *, built_at: dt.datetime, budget_minutes: int, explanation: str
+    ) -> None:
+        with self._session.begin() as s:
+            s.merge(
+                DailyPlanRow(
+                    day=day,
+                    built_at=built_at,
+                    budget_minutes=budget_minutes,
+                    explanation=explanation,
+                )
+            )
+
+    def plan_items(self, day: dt.date) -> list[PlanItem]:
+        return self.plan_items_between(day, day)
+
+    def plan_items_between(self, start: dt.date, end: dt.date) -> list[PlanItem]:
+        query = (
+            select(PlanItemRow)
+            .where(PlanItemRow.day >= start, PlanItemRow.day <= end)
+            .order_by(PlanItemRow.day, PlanItemRow.position, PlanItemRow.id)
+        )
+        with self._session() as s:
+            return [self._plan_item(row) for row in s.scalars(query)]
+
+    def get_plan_item(self, item_id: int) -> PlanItem | None:
+        with self._session() as s:
+            row = s.get(PlanItemRow, item_id)
+            return None if row is None else self._plan_item(row)
+
+    def add_plan_items(self, items: Sequence[PlanItem], at: dt.datetime) -> list[PlanItem]:
+        with self._session.begin() as s:
+            self._ensure_subjects(s)
+            rows = [
+                PlanItemRow(
+                    day=item.day,
+                    position=item.position,
+                    kind=item.kind,
+                    subject=item.subject,
+                    exam_item=item.exam_item,
+                    skill_code=item.skill_code,
+                    tasks=item.tasks,
+                    minutes=item.minutes,
+                    mandatory=item.mandatory,
+                    added_by_user=item.added_by_user,
+                    status=item.stored_status,
+                    reason=item.reason,
+                    note=item.note,
+                    carried_from=item.carried_from,
+                    created_at=at,
+                )
+                for item in items
+            ]
+            s.add_all(rows)
+            s.flush()
+            return [self._plan_item(row) for row in rows]
+
+    def delete_plan_items(self, item_ids: Iterable[int]) -> None:
+        ids = list(item_ids)
+        if not ids:
+            return
+        with self._session.begin() as s:
+            s.execute(delete(PlanItemRow).where(PlanItemRow.id.in_(ids)))
+
+    def update_plan_item(
+        self,
+        item_id: int,
+        *,
+        status: PlanItemStatus | None = None,
+        note: str | None = None,
+        position: int | None = None,
+    ) -> PlanItem:
+        with self._session.begin() as s:
+            row = s.get(PlanItemRow, item_id)
+            if row is None:
+                raise RepositoryError(f"пункт плана №{item_id} не найден")
+            if status is not None:
+                row.status = status
+            if note is not None:
+                row.note = note
+            if position is not None:
+                row.position = position
+            s.flush()
+            return self._plan_item(row)
+
+    def unclosed_plan_days(self, before: dt.date) -> list[dt.date]:
+        query = (
+            select(DailyPlanRow.day)
+            .outerjoin(DisciplineDayRow, DisciplineDayRow.day == DailyPlanRow.day)
+            .where(DailyPlanRow.day < before, DisciplineDayRow.day.is_(None))
+            .order_by(DailyPlanRow.day)
+        )
+        with self._session() as s:
+            return list(s.scalars(query))
+
+    def save_discipline_day(self, day: DisciplineDay, at: dt.datetime) -> None:
+        with self._session.begin() as s:
+            if s.get(DisciplineDayRow, day.day) is not None:
+                return  # итог дня не переписывается задним числом
+            s.add(
+                DisciplineDayRow(
+                    day=day.day,
+                    due_minutes=day.due_minutes,
+                    done_minutes=day.done_minutes,
+                    due_items=day.due_items,
+                    done_items=day.done_items,
+                    excused=day.excused,
+                    closed_at=at,
+                )
+            )
+
+    def list_discipline_days(self, start: dt.date, end: dt.date) -> list[DisciplineDay]:
+        query = (
+            select(DisciplineDayRow)
+            .where(DisciplineDayRow.day >= start, DisciplineDayRow.day <= end)
+            .order_by(DisciplineDayRow.day)
+        )
+        with self._session() as s:
+            return [
+                DisciplineDay(
+                    row.day,
+                    row.due_minutes,
+                    row.done_minutes,
+                    row.due_items,
+                    row.done_items,
+                    row.excused,
+                )
+                for row in s.scalars(query)
+            ]
+
+    @staticmethod
+    def _control(row: ControlSessionRow) -> ControlSession:
+        task_ids = tuple(json.loads(row.task_ids_json))
+        return ControlSession(
+            id=row.id,
+            subject=row.subject,
+            exam_item=row.exam_item,
+            status=row.status,
+            task_ids=task_ids,
+            started_at=row.started_at,
+            finished_at=row.finished_at,
+            time_limit_seconds=row.time_limit_seconds,
+            passed_tasks=row.passed_tasks,
+            total_tasks=len(task_ids),
+        )
+
+    def create_control_session(
+        self,
+        *,
+        subject: Subject,
+        exam_item: int,
+        task_ids: Sequence[int],
+        time_limit_seconds: int,
+        at: dt.datetime,
+    ) -> ControlSession:
+        with self._session.begin() as s:
+            self._ensure_subjects(s)
+            row = ControlSessionRow(
+                subject=subject,
+                exam_item=exam_item,
+                status=ControlStatus.ACTIVE,
+                task_ids_json=json.dumps(list(task_ids)),
+                time_limit_seconds=time_limit_seconds,
+                passed_tasks=0,
+                started_at=at,
+            )
+            s.add(row)
+            s.flush()
+            return self._control(row)
+
+    def get_control_session(self, session_id: int) -> ControlSession | None:
+        with self._session() as s:
+            row = s.get(ControlSessionRow, session_id)
+            return None if row is None else self._control(row)
+
+    def list_control_sessions(
+        self, subject: Subject | None = None, exam_item: int | None = None, limit: int = 20
+    ) -> list[ControlSession]:
+        query = select(ControlSessionRow).order_by(
+            ControlSessionRow.started_at.desc(), ControlSessionRow.id.desc()
+        )
+        if subject is not None:
+            query = query.where(ControlSessionRow.subject == subject)
+        if exam_item is not None:
+            query = query.where(ControlSessionRow.exam_item == exam_item)
+        with self._session() as s:
+            return [self._control(row) for row in s.scalars(query.limit(limit))]
+
+    def add_control_attempt(self, session_id: int, attempt_id: int) -> None:
+        with self._session.begin() as s:
+            s.add(ControlAttemptRow(session_id=session_id, attempt_id=attempt_id))
+
+    def control_attempts(self, session_id: int) -> list[Attempt]:
+        query = (
+            select(AttemptRow)
+            .options(selectinload(AttemptRow.task))
+            .join(ControlAttemptRow, ControlAttemptRow.attempt_id == AttemptRow.id)
+            .where(ControlAttemptRow.session_id == session_id)
+            .order_by(AttemptRow.started_at, AttemptRow.id)
+        )
+        with self._session() as s:
+            return [self._attempt(row) for row in s.scalars(query)]
+
+    def control_session_of_attempt(self, attempt_id: int) -> int | None:
+        with self._session() as s:
+            row = s.get(ControlAttemptRow, attempt_id)
+            return row.session_id if row else None
+
+    def finish_control_session(
+        self, session_id: int, *, status: ControlStatus, passed_tasks: int, at: dt.datetime
+    ) -> ControlSession:
+        with self._session.begin() as s:
+            row = s.get(ControlSessionRow, session_id)
+            if row is None:
+                raise RepositoryError(f"контрольная №{session_id} не найдена")
+            if row.status != ControlStatus.ACTIVE:
+                raise RepositoryError(f"контрольная №{session_id} уже завершена")
+            row.status = status
+            row.passed_tasks = passed_tasks
+            row.finished_at = at
+            s.flush()
+            return self._control(row)

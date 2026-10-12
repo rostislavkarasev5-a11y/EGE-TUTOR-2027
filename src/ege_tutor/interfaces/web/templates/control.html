@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field, subject_select with context %}
+{% block content %}
+<h1>Контрольная «я это знаю»</h1>
+<p class="meta">Если считаешь, что номер уже освоен, докажи это: {{ config.tasks }} проверенных задач номера,
+  которые ты не решал последние {{ config.fresh_days }} дней, без подсказок и без ИИ. Засчитано, если
+  не меньше {{ (config.pass_share * 100)|round|int }}% задач решены верно и каждая не дольше норматива × {{ config.slow_factor }}.
+  Тогда номер {{ config.skip_days }} дней не попадает в тренировки плана (повторения остаются).</p>
+
+<section class="card">
+  <form method="post" action="/control/start" class="row">
+    {{ csrf_field() }}
+    {{ subject_select("") }}
+    <input type="number" name="item" min="1" max="27" placeholder="№ задания" aria-label="Номер задания" required>
+    <button type="submit">Начать контрольную</button>
+  </form>
+</section>
+
+{% if sessions %}
+<section class="card">
+  <h2>Контрольные</h2>
+  <table>
+    <tr><th>Предмет</th><th>№</th><th>Начата</th><th>Итог</th></tr>
+    {% for c in sessions %}
+    <tr>
+      <td><a href="/control/{{ c.id }}">{{ SUBJECT_NAMES[c.subject] }}</a></td>
+      <td>{{ c.exam_item }}</td>
+      <td>{{ c.started_at|utc_time }}</td>
+      <td>{{ c.status_name }}{% if c.status != ControlStatus.ACTIVE %} · {{ c.passed_tasks }} из {{ c.total_tasks }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

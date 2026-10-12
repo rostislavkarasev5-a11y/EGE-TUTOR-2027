@@ -32,11 +32,15 @@ from ege_tutor.core.domain import (
     ChatRole,
     ClassifiedBy,
     CodeVerdict,
+    ControlStatus,
     DiagnosticStatus,
+    EventKind,
     ImportBatchStatus,
     ItemBasis,
     MistakeCategory,
     Part2GradeStatus,
+    PlanItemKind,
+    PlanItemStatus,
     StopReason,
     Subject,
     TaskSource,
@@ -180,6 +184,7 @@ class StudentRow(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     display_name: Mapped[str | None] = mapped_column(String(100))
+    utc_offset_hours: Mapped[int | None] = mapped_column(Integer)  # None — по умолчанию
 
 
 class StudentTargetRow(Base):
@@ -588,3 +593,135 @@ class Part2GradeRow(Base):
     summary: Mapped[str] = mapped_column(Text)
     status: Mapped[Part2GradeStatus] = mapped_column(_enum(Part2GradeStatus))
     created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+# ── расписание, план, дисциплина (Phase 7, ADR-0019) ────────────────────────
+# Расписание — личные данные: только в этой базе, не в Git (ADR-0004).
+
+
+class CalendarWindowRow(Base):
+    """Окно для учёбы в шаблоне недели. Время — минуты от полуночи по местному времени."""
+
+    __tablename__ = "calendar_window"
+    __table_args__ = (
+        CheckConstraint("weekday BETWEEN 0 AND 6", name="weekday_range"),
+        CheckConstraint(
+            "start_minute >= 0 AND end_minute <= 1440 AND start_minute < end_minute",
+            name="minute_range",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    weekday: Mapped[int]
+    start_minute: Mapped[int]
+    end_minute: Mapped[int]
+
+
+class CalendarEventRow(Base):
+    """Событие. Начало и конец — местное время ученика, без часового пояса."""
+
+    __tablename__ = "calendar_event"
+    __table_args__ = (
+        CheckConstraint("starts_at < ends_at", name="event_order"),
+        Index("ix_calendar_event_starts_at", "starts_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[EventKind] = mapped_column(_enum(EventKind))
+    title: Mapped[str] = mapped_column(String(200))
+    starts_at: Mapped[dt.datetime] = mapped_column(DateTime)
+    ends_at: Mapped[dt.datetime] = mapped_column(DateTime)
+    blocks_study: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class DailyCheckinRow(Base):
+    __tablename__ = "daily_checkin"
+    __table_args__ = (
+        CheckConstraint("fatigue BETWEEN 1 AND 5", name="fatigue_range"),
+        CheckConstraint(
+            "available_minutes IS NULL OR available_minutes BETWEEN 0 AND 1440",
+            name="available_range",
+        ),
+    )
+
+    day: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    fatigue: Mapped[int]
+    available_minutes: Mapped[int | None] = mapped_column(Integer)
+    note: Mapped[str | None] = mapped_column(String(500))
+    updated_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class DailyPlanRow(Base):
+    __tablename__ = "daily_plan"
+
+    day: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    built_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    budget_minutes: Mapped[int]
+    explanation: Mapped[str] = mapped_column(Text)
+
+
+class PlanItemRow(Base):
+    """Пункт плана. Перенесённый пункт может лежать на дне, план которого ещё не построен."""
+
+    __tablename__ = "plan_item"
+    __table_args__ = (
+        CheckConstraint("tasks >= 1", name="tasks_positive"),
+        CheckConstraint("minutes >= 1", name="minutes_positive"),
+        Index("ix_plan_item_day", "day"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    day: Mapped[dt.date] = mapped_column(Date)
+    position: Mapped[int]
+    kind: Mapped[PlanItemKind] = mapped_column(_enum(PlanItemKind))
+    subject: Mapped[Subject] = mapped_column(_enum(Subject), ForeignKey("subject.code"))
+    exam_item: Mapped[int | None] = mapped_column(Integer)
+    skill_code: Mapped[str | None] = mapped_column(String(100))
+    tasks: Mapped[int]
+    minutes: Mapped[int]
+    mandatory: Mapped[bool] = mapped_column(Boolean)
+    added_by_user: Mapped[bool] = mapped_column(Boolean)
+    status: Mapped[PlanItemStatus] = mapped_column(_enum(PlanItemStatus))
+    reason: Mapped[str] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    carried_from: Mapped[dt.date | None] = mapped_column(Date)
+    created_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class DisciplineDayRow(Base):
+    """Итог закрытого дня. Пишется один раз, задним числом не меняется."""
+
+    __tablename__ = "discipline_day"
+
+    day: Mapped[dt.date] = mapped_column(Date, primary_key=True)
+    due_minutes: Mapped[int]
+    done_minutes: Mapped[float] = mapped_column(Float)
+    due_items: Mapped[int]
+    done_items: Mapped[int]
+    excused: Mapped[bool] = mapped_column(Boolean)
+    closed_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+
+
+class ControlSessionRow(Base):
+    """Контрольная «я это знаю» по номеру ЕГЭ."""
+
+    __tablename__ = "control_session"
+    __table_args__ = (Index("ix_control_session_item", "subject", "exam_item"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject: Mapped[Subject] = mapped_column(_enum(Subject), ForeignKey("subject.code"))
+    exam_item: Mapped[int]
+    status: Mapped[ControlStatus] = mapped_column(_enum(ControlStatus))
+    task_ids_json: Mapped[str] = mapped_column(Text)
+    time_limit_seconds: Mapped[int]
+    passed_tasks: Mapped[int] = mapped_column(default=0)
+    started_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)
+
+
+class ControlAttemptRow(Base):
+    __tablename__ = "control_attempt"
+
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"), primary_key=True)
+    session_id: Mapped[int] = mapped_column(ForeignKey("control_session.id"), index=True)

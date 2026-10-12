@@ -33,7 +33,7 @@ FINISHED = (AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP)
 # Подсказка без текста: уровень засчитан за вопрос репетитору (ADR-0018).
 CHAT_HINT_TEXT = "Засчитана за вопрос репетитору."
 # Режимы без подсказок: диагностика (ADR-0016). Правило обеспечивает CORE, а не интерфейс.
-NO_HINT_MODES = frozenset({AttemptMode.DIAGNOSTIC})
+NO_HINT_MODES = frozenset({AttemptMode.DIAGNOSTIC, AttemptMode.CONTROL})
 
 
 def final_answer_type(answer: str) -> AnswerType:
@@ -191,7 +191,8 @@ class PracticeService:
         """Следующая подсказка: ближайший записанный уровень выше уже показанного."""
         attempt = self._open_attempt(attempt_id)
         if attempt.mode in NO_HINT_MODES:
-            raise AppError("в диагностике подсказок нет: она измеряет, что ты умеешь сам")
+            where = "в диагностике" if attempt.mode == AttemptMode.DIAGNOSTIC else "в контрольной"
+            raise AppError(f"{where} подсказок нет: она измеряет, что ты умеешь сам")
         task = self._task(attempt.task_id)
         level = next(
             (lv for lv in self.available_hint_levels(task) if lv > attempt.max_hint_level), None

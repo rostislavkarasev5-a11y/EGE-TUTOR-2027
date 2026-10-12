@@ -14,6 +14,10 @@
     <label>Цель по информатике (0–100)
       <input type="number" name="target_informatics" min="0" max="100" value="{{ profile.targets[Subject.INFORMATICS] }}">
     </label>
+    <label>Часовой пояс: часов от UTC (Москва — 3)
+      <input type="number" name="utc_offset" min="-12" max="14" value="{{ utc_offset }}">
+    </label>
+    <p class="meta">По нему считается «сегодня» для плана и дисциплины.</p>
     <button type="submit">Сохранить</button>
   </form>
 </section>

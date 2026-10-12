@@ -1,6 +1,6 @@
 """Загрузка и проверка конфигурации из папки config/ (ADR-0005).
 
-Конфигурация — три TOML-файла: app.toml, mastery.toml, diagnostics.toml.
+Конфигурация — четыре TOML-файла: app.toml, mastery.toml, diagnostics.toml, planner.toml.
 Каждый проверяется моделью Pydantic; опечатка в имени ключа — ошибка, а не тихое игнорирование.
 """
 
@@ -288,6 +288,82 @@ class DiagnosticsConfig(_Strict):
     rules: DiagnosticsRules
 
 
+# ── planner.toml ────────────────────────────────────────────────────────────
+
+
+Share = Annotated[float, Field(gt=0.0, le=1.0)]
+Positive = Annotated[int, Field(gt=0)]
+
+
+class PlannerDay(_Strict):
+    default_utc_offset_hours: Annotated[int, Field(ge=-12, le=14)]
+    default_minutes: Positive
+    min_plan_minutes: Annotated[int, Field(ge=0)]
+    fatigue_factors: Annotated[
+        list[Annotated[float, Field(ge=0.0, le=1.0)]], Field(min_length=5, max_length=5)
+    ]
+
+    def fatigue_factor(self, fatigue: int | None) -> float:
+        return 1.0 if fatigue is None else self.fatigue_factors[fatigue - 1]
+
+
+class PlannerPlan(_Strict):
+    mandatory_share: Share
+    user_change_share: Annotated[float, Field(ge=0.0, le=1.0)]
+    time_factor: PositiveWeight
+    default_task_minutes: Positive
+    max_tasks_per_item: Positive
+    review_tasks: Positive
+    mistake_tasks: Positive
+    diagnostic_minutes: Positive
+    min_subject_share: Annotated[float, Field(ge=0.0, le=0.5)]
+    unstudied_mastery: Factor
+    min_gap_factor: Factor
+    carry_search_days: Positive
+
+
+class PlannerExcuses(_Strict):
+    warn_days: Positive
+    window_days: Positive
+
+
+class PlannerControl(_Strict):
+    tasks: Positive
+    min_tasks: Positive
+    pass_share: Share
+    slow_factor: PositiveWeight
+    fresh_days: Annotated[int, Field(ge=0)]
+    skip_days: Positive
+
+    @model_validator(mode="after")
+    def _min_not_above_tasks(self) -> Self:
+        if self.min_tasks > self.tasks:
+            raise ValueError("min_tasks не может быть больше tasks")
+        return self
+
+
+class PlannerDiscipline(_Strict):
+    window_days: Positive
+    green: Share
+    yellow: Share
+    orange: Share
+    red_streak_days: Positive
+
+    @model_validator(mode="after")
+    def _thresholds_ordered(self) -> Self:
+        if not self.green > self.yellow > self.orange:
+            raise ValueError("пороги дисциплины должны убывать: green > yellow > orange")
+        return self
+
+
+class PlannerConfig(_Strict):
+    day: PlannerDay
+    plan: PlannerPlan
+    excuses: PlannerExcuses
+    control: PlannerControl
+    discipline: PlannerDiscipline
+
+
 # ── загрузка ────────────────────────────────────────────────────────────────
 
 
@@ -305,6 +381,7 @@ class Settings(_Strict):
     app: AppConfig
     mastery: MasteryConfig
     diagnostics: DiagnosticsConfig
+    planner: PlannerConfig
 
     @property
     def data_dir(self) -> Path:
@@ -367,4 +444,5 @@ def load_settings(config_dir: Path | None = None) -> Settings:
         app=_with_ai_overrides(_read_toml(config_dir / "app.toml", AppConfig)),
         mastery=_read_toml(config_dir / "mastery.toml", MasteryConfig),
         diagnostics=_read_toml(config_dir / "diagnostics.toml", DiagnosticsConfig),
+        planner=_read_toml(config_dir / "planner.toml", PlannerConfig),
     )

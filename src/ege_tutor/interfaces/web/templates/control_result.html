@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field with context %}
+{% block content %}
+<h1>Контрольная: {{ SUBJECT_NAMES[session.subject] }}, №{{ session.exam_item }}</h1>
+<section class="card">
+  <p><strong>{{ session.status_name|capitalize }}</strong>{% if session.status != ControlStatus.ACTIVE %}:
+    засчитано {{ session.passed_tasks }} из {{ session.total_tasks }} задач{% endif %}.</p>
+  {% if session.status == ControlStatus.ACTIVE %}
+  <div class="row">
+    <form method="post" action="/control/{{ session.id }}/continue">{{ csrf_field() }}<button type="submit">Продолжить</button></form>
+    <form method="post" action="/control/{{ session.id }}/finish">{{ csrf_field() }}<button type="submit" class="link">Завершить сейчас</button></form>
+  </div>
+  {% elif session.status == ControlStatus.PASSED %}
+  <p>Номер на время уходит из тренировок плана. Повторения по нему остаются.</p>
+  {% else %}
+  <p>Номер остаётся в плане. Ниже видно, какие задачи не получились.</p>
+  {% endif %}
+</section>
+<section class="card">
+  <table>
+    <tr><th>Задача</th><th>Верно</th><th>Сам</th><th>Время</th></tr>
+    {% for r in results %}
+    <tr>
+      <td><a href="/tasks/{{ r.task_id }}">{{ r.task_id }}</a></td>
+      {% if r.attempt_id is none %}
+      <td colspan="3" class="meta">не решалась</td>
+      {% else %}
+      <td>{{ "да" if r.correct else "нет" }}</td>
+      <td>{{ "да" if r.independent else "нет" }}</td>
+      <td>{{ r.seconds|minutes }}{% if r.norm_seconds %} при нормативе {{ r.norm_seconds|minutes }}{% endif %}{% if not r.in_time %} — дольше нормы × {{ slow_factor }}{% endif %}</td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endblock %}

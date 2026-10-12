@@ -19,14 +19,24 @@ from ege_tutor.core.domain import (
     AIStatus,
     Attempt,
     AttemptMode,
+    CalendarEvent,
+    CalendarWindow,
     Catalog,
     ChatMessage,
     ChatRole,
     CodeRun,
+    ControlSession,
+    ControlStatus,
+    ControlTaskResult,
+    DailyCheckin,
+    DailyPlan,
+    DayBudget,
     DiagnosticItemResult,
     DiagnosticSession,
     DiagnosticState,
     DiagnosticStatus,
+    DisciplineReport,
+    EventKind,
     ExamSpec,
     ImportBatch,
     ImportReport,
@@ -35,6 +45,8 @@ from ege_tutor.core.domain import (
     MistakeCategory,
     MistakePattern,
     Part2Grade,
+    PlanItem,
+    PlanItemKind,
     ReviewItem,
     SkillMastery,
     StopReason,
@@ -58,14 +70,17 @@ from ege_tutor.core.services.assistant import AIHint, AssistantService, Generate
 from ege_tutor.core.services.catalog import load_catalog
 from ege_tutor.core.services.code import CodeService
 from ege_tutor.core.services.content_import import build_report
+from ege_tutor.core.services.control import ControlService, ControlStep
 from ege_tutor.core.services.diagnostics import DiagnosticsService
 from ege_tutor.core.services.mastery import Calibration, MasteryService
+from ege_tutor.core.services.planner import PlannerService, PlannerSources
+from ege_tutor.core.services.planner import parse_time as parse_time  # для CLI и сайта
 from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
 from ege_tutor.core.services.voice import SpeechClip, VoiceService, speakable
 from ege_tutor.sandbox import make_sandbox
 from ege_tutor.subjects import tutor_for
 
-CURRENT_PHASE = 6
+CURRENT_PHASE = 7
 DB_FILE_NAME = "ege.db"
 BACKUP_PREFIX = "ege-"
 DEFAULT_BACKUPS_KEPT = 14
@@ -143,6 +158,21 @@ class TutorApp:
             settings.mastery.independence.for_hint_level,
             self.asset_root,
             speech,
+        )
+        self.control = ControlService(repository, clock, settings.planner.control, catalog)
+        # План строится без ИИ: только по данным CORE (ADR-0019).
+        self.planner = PlannerService(
+            repository,
+            clock,
+            settings.planner,
+            catalog,
+            PlannerSources(
+                review_queue=self.review_queue,
+                mastery_by_exam_item=self.mastery_by_exam_item,
+                task_for_skill=self.practice.task_for_skill,
+                diagnostic_tasks=self.diagnostic_task_count,
+                profile_offset=lambda: self.repository.get_profile().utc_offset_hours,
+            ),
         )
         self.voice = VoiceService(
             repository,
@@ -245,7 +275,9 @@ class TutorApp:
         self,
         display_name: str | None = None,
         targets: dict[Subject, int] | None = None,
+        utc_offset_hours: int | None = None,
     ) -> StudentProfile:
+        """Изменить профиль; None — поле не меняется."""
         current = self.repository.get_profile()
         new_targets = dict(current.targets)
         for subject, score in (targets or {}).items():
@@ -255,7 +287,12 @@ class TutorApp:
         name = current.display_name if display_name is None else display_name.strip() or None
         if name is not None and len(name) > 100:
             raise AppError("имя не длиннее 100 символов")
-        profile = replace(current, display_name=name, targets=new_targets)
+        offset = current.utc_offset_hours
+        if utc_offset_hours is not None:
+            if not -12 <= utc_offset_hours <= 14:
+                raise AppError("часовой пояс — от UTC−12 до UTC+14")
+            offset = utc_offset_hours
+        profile = replace(current, display_name=name, targets=new_targets, utc_offset_hours=offset)
         self.repository.save_profile(profile)
         return profile
 
@@ -536,6 +573,150 @@ class TutorApp:
 
     def diagnostic_session_of_attempt(self, attempt_id: int) -> int | None:
         return self.diagnostics.session_of_attempt(attempt_id)
+
+    # ── расписание, план, дисциплина и контрольная (Phase 7, ADR-0019) ──────
+
+    def today(self) -> dt.date:
+        """Сегодняшняя дата по часовому поясу ученика."""
+        return self.planner.today()
+
+    def utc_offset_hours(self) -> int:
+        return self.planner.offset_hours()
+
+    def calendar_windows(self) -> list[CalendarWindow]:
+        return self.planner.windows()
+
+    def add_calendar_window(self, weekday: int, start: dt.time, end: dt.time) -> CalendarWindow:
+        return self.planner.add_window(weekday, start, end)
+
+    def delete_calendar_window(self, window_id: int) -> None:
+        self.planner.delete_window(window_id)
+
+    def calendar_events(self, start: dt.date | None = None, days: int = 30) -> list[CalendarEvent]:
+        return self.planner.events(start, days)
+
+    def add_calendar_event(
+        self,
+        kind: EventKind,
+        title: str,
+        starts_at: dt.datetime,
+        ends_at: dt.datetime,
+        blocks_study: bool = True,
+    ) -> CalendarEvent:
+        return self.planner.add_event(kind, title, starts_at, ends_at, blocks_study)
+
+    def delete_calendar_event(self, event_id: int) -> None:
+        self.planner.delete_event(event_id)
+
+    def checkin(self, day: dt.date | None = None) -> DailyCheckin | None:
+        return self.planner.checkin(day)
+
+    def save_checkin(
+        self, fatigue: int, available_minutes: int | None = None, note: str | None = None
+    ) -> DailyCheckin:
+        """Чек-ин меняет бюджет; уже построенный план перестраивается по кнопке."""
+        return self.planner.save_checkin(fatigue, available_minutes, note)
+
+    def day_budget(self, day: dt.date | None = None) -> DayBudget:
+        return self.planner.budget(day)
+
+    def daily_plan(self, day: dt.date | None = None, *, build: bool = True) -> DailyPlan | None:
+        return self.planner.plan(day, build=build)
+
+    def rebuild_plan(self) -> DailyPlan:
+        return self.planner.rebuild()
+
+    def plan_change_limit(self, plan: DailyPlan) -> tuple[int, int]:
+        return self.planner.change_limit(plan)
+
+    def move_plan_item(self, item_id: int, to_day: dt.date, note: str | None = None) -> PlanItem:
+        return self.planner.move_item(item_id, to_day, note)
+
+    def remove_plan_item(self, item_id: int) -> PlanItem:
+        return self.planner.remove_item(item_id)
+
+    def add_plan_item(self, subject: Subject, exam_item: int, tasks: int) -> PlanItem:
+        return self.planner.add_item(subject, exam_item, tasks)
+
+    def reorder_plan_item(self, item_id: int, up: bool = True) -> None:
+        self.planner.move_up(item_id, up)
+
+    def excuse_plan_item(self, item_id: int, note: str | None) -> PlanItem | None:
+        return self.planner.excuse_item(item_id, note)
+
+    def excuse_day(self, note: str | None) -> int:
+        return self.planner.excuse_day(note)
+
+    def discipline(self) -> DisciplineReport:
+        return self.planner.discipline()
+
+    def plan_item_task(self, item_id: int) -> tuple[Task, AttemptMode]:
+        """Какую задачу решать по пункту плана и в каком режиме."""
+        item = self.planner.item(item_id)
+        if item.kind == PlanItemKind.PRACTICE:
+            assert item.exam_item is not None
+            return self.next_task(item.subject, item.exam_item), AttemptMode.PRACTICE
+        if item.kind in (PlanItemKind.REVIEW, PlanItemKind.MISTAKE):
+            assert item.skill_code is not None
+            task = self.practice.task_for_skill(item.skill_code)
+            if task is None:
+                raise AppError("для этого навыка нет проверенных задач")
+            mode = AttemptMode.REVIEW if item.kind == PlanItemKind.REVIEW else AttemptMode.PRACTICE
+            return task, mode
+        raise AppError("этот пункт выполняется на своей странице (диагностика или контрольная)")
+
+    def start_plan_item(self, item_id: int) -> Attempt:
+        """Начать следующую задачу пункта плана (тренировка, повторение, задачи на ошибку)."""
+        task, mode = self.plan_item_task(item_id)
+        return self.start_attempt(task.id, mode)
+
+    def control_unavailable(self, subject: Subject, exam_item: int) -> str | None:
+        """Почему по номеру нельзя пройти контрольную (None — можно)."""
+        return self.control.why_unavailable(subject, exam_item)
+
+    def start_control(self, subject: Subject, exam_item: int) -> ControlSession:
+        """Контрольная «я это знаю»: без подсказок и без ИИ; пункт попадает в план дня."""
+        existing = self.control.active(subject, exam_item)
+        session = self.control.start(subject, exam_item)
+        if existing is None:
+            self.planner.add_control_item(subject, exam_item, session.time_limit_seconds)
+        return session
+
+    def control_step(self, session_id: int) -> ControlStep:
+        """Текущая задача контрольной; если задач не осталось — итог."""
+        session = self.control.session(session_id)
+        if session.status != ControlStatus.ACTIVE:
+            return ControlStep(session, None, None)
+        attempt = self.control.open_attempt(session_id)
+        if attempt is not None:
+            return ControlStep(session, attempt, self.task(attempt.task_id))
+        task_id = self.control.next_task_id(session_id)
+        if task_id is None:
+            return ControlStep(self.control.finish(session_id), None, None)
+        attempt = self.start_attempt(task_id, AttemptMode.CONTROL)
+        self.control.link(session_id, attempt.id)
+        return ControlStep(session, attempt, self.task(task_id))
+
+    def finish_control(self, session_id: int) -> ControlSession:
+        """Завершить контрольную досрочно: нерешённые задачи не засчитываются."""
+        attempt = self.control.open_attempt(session_id)
+        if attempt is not None:
+            self.practice.abandon(attempt.id)
+        return self.control.finish(session_id)
+
+    def control_session(self, session_id: int) -> ControlSession:
+        return self.control.session(session_id)
+
+    def control_sessions(
+        self, subject: Subject | None = None, exam_item: int | None = None, limit: int = 20
+    ) -> list[ControlSession]:
+        return self.control.sessions(subject, exam_item, limit)
+
+    def control_results(self, session_id: int) -> list[ControlTaskResult]:
+        return self.control.results(session_id)
+
+    def control_session_of_attempt(self, attempt_id: int) -> int | None:
+        return self.control.session_of_attempt(attempt_id)
 
     # ── ИИ-помощник (Phase 6, ADR-0017) ─────────────────────────────────────
 
