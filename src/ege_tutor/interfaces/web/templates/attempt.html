@@ -114,6 +114,9 @@
 {% if diagnostic %}
 <p class="flash info">Диагностика · задача {{ diagnostic.tasks_done + 1 }} (не больше {{ diagnostic.max_tasks }}) ·
   без подсказок, ответ даётся один раз.</p>
+{% elif lesson %}
+<p class="flash info">Учебный блок «{{ skill_title(lesson.skill_code) }}» · {{ lesson.step_name }} ·
+  <a href="/lessons/{{ lesson.id }}">к блоку</a></p>
 {% elif control %}
 <p class="flash info">Контрольная «я это знаю» · №{{ control.exam_item }} · задача {{ control_done + 1 }} из {{ control.total_tasks }} ·
   без подсказок и без ИИ, ответ даётся один раз.</p>
@@ -190,6 +193,9 @@
       {% else %}<p>Решено с подсказкой уровня {{ attempt.max_hint_level }}: это не считается самостоятельным решением.</p>{% endif %}
     {% endif %}
     <div class="row actions">
+      {% if lesson %}
+      <form method="post" action="/lessons/{{ lesson.id }}/next">{{ csrf_field() }}<button type="submit">Дальше по блоку</button></form>
+      {% else %}
       {% if not attempt.correct %}
       <form method="post" action="/tasks/{{ task.id }}/start">{{ csrf_field() }}<button type="submit">Попробовать ещё раз</button></form>
       {% endif %}
@@ -197,6 +203,7 @@
         <input type="hidden" name="subject" value="{{ filter_subject }}">
         <input type="hidden" name="item" value="{{ filter_item }}">
         <button type="submit" {% if not attempt.correct %}class="secondary"{% endif %}>Следующая задача</button></form>
+      {% endif %}
       <form method="post" action="/attempts/{{ attempt.id }}/similar">{{ csrf_field() }}<button class="secondary" type="submit">Похожая задача</button></form>
     </div>
     {% if not reveal %}

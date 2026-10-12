@@ -919,3 +919,72 @@ def test_profile_time_zone(client, tutor):
     assert tutor.utc_offset_hours() == 5
     bad = post(client, "/profile", {"utc_offset": "abc"})
     assert "Часовой пояс" in bad.text
+
+
+def test_learning_block_on_site(client, tutor):
+    """Phase 8: блок по навыку от теории до проверки и разбора ошибок на сайте."""
+    tutor.install_starter_bank()
+    tutor.learning.config = tutor.learning.config.model_copy(
+        update={"independent_tasks": 2, "homework_base": 1}
+    )
+    learn = client.get("/learn").text
+    assert "Советую сейчас" in learn
+    assert "/learn/skill/M04.classical" in learn
+
+    start = client.get("/learn/skill/M04.classical").text
+    assert "Начать блок" in start
+    page = post(client, "/learn/start", {"skill_code": "M04.classical"})
+    assert "Прочитал" in page.text
+    lesson_id = int(re.search(r"Учебный блок №(\d+)", page.text).group(1))
+    # повторный вход по навыку открывает тот же блок
+    assert f"Учебный блок №{lesson_id}" in client.get("/learn/skill/M04.classical").text
+
+    assert "Понял, к задачам" in post(client, f"/lessons/{lesson_id}/confirm").text
+    assert "Решено 0 из 2" in post(client, f"/lessons/{lesson_id}/confirm").text
+
+    for _ in range(2):
+        attempt_page = post(client, f"/lessons/{lesson_id}/next")
+        assert "Учебный блок «" in attempt_page.text
+        attempt_id = int(re.search(r"/attempts/(\d+)/answer", attempt_page.text).group(1))
+        result = post(client, f"/attempts/{attempt_id}/answer", {"answer": "123456"})
+        assert "Дальше по блоку" in result.text
+        assert "Следующая задача" not in result.text
+
+    check = client.get(f"/lessons/{lesson_id}").text
+    assert "Верно без подсказок: <strong>0 из 2</strong>" in check
+    review = post(client, f"/lessons/{lesson_id}/confirm").text
+    assert "Разбор ошибок" in review
+    for found in re.findall(rf"/lessons/{lesson_id}/reviewed/(\d+)", review):
+        page = post(client, f"/lessons/{lesson_id}/reviewed/{found}").text
+    assert "Задачи на ошибки" in page
+
+    abandoned = post(client, f"/lessons/{lesson_id}/abandon").text
+    assert "Блок брошен" in abandoned
+    assert "брошен" in client.get("/learn").text
+
+
+def test_theory_page_and_unknown_skill(client):
+    page = client.get("/theory/M04.classical").text
+    assert "Классическое определение вероятности" in page
+    assert "Теорию написал ИИ" in page
+    assert "<h3>Что такое вероятность</h3>" in page
+    assert "Пример 7." in page
+    assert "Объясни иначе" not in page  # без ИИ кнопки нет
+    assert "Теории по этой теме пока нет" in client.get("/theory/M01.area").text
+    assert "нет в каталоге" in client.get("/theory/X.nope").text
+    assert "нет в каталоге" in client.get("/learn/skill/X.nope").text
+
+
+def test_retell_theory_with_ai(ai_client):
+    client, app, fake = ai_client
+    fake.explanation = "Вероятность — это доля удачных исходов среди всех."
+    page = client.get("/theory/M04.classical").text
+    assert "Объясни иначе (ИИ)" in page
+    retold = post(client, "/theory/M04.classical/retell", {"example": ""})
+    assert "Вероятность — это доля удачных исходов" in retold.text
+    assert "Объяснение иначе" in retold.text
+    example = post(client, "/theory/M04.classical/retell", {"example": "2"})
+    assert "<details open>" in example.text
+    assert fake.calls[-1] == ("retell", "Классическое определение вероятности, пример «Билеты»")
+    assert "примера №9 нет" in post(client, "/theory/M04.classical/retell", {"example": "9"}).text
+    assert app.ai_status().month_calls == 2

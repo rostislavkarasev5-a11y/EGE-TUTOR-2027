@@ -45,6 +45,8 @@
           <a href="/diagnostics">Решать</a>
           {% elif i.kind == PlanItemKind.CONTROL %}
           <a href="/control">Решать</a>
+          {% elif i.kind in (PlanItemKind.LESSON, PlanItemKind.HOMEWORK) %}
+          <a href="/learn/skill/{{ i.skill_code }}">{% if i.kind == PlanItemKind.LESSON %}Учиться{% else %}Делать домашку{% endif %}</a>
           {% else %}
           <form method="post" action="/plan/items/{{ i.id }}/start">{{ csrf_field() }}<button type="submit">Решать</button></form>
           {% endif %}

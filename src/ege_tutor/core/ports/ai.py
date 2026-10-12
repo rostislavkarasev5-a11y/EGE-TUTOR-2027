@@ -9,6 +9,7 @@ from ege_tutor.core.domain import (
     AITaskSuggestion,
     AIText,
     ChatTurn,
+    Subject,
 )
 
 
@@ -62,6 +63,10 @@ class AIService(Protocol):
         self, task: AITaskContext, solution_text: str, max_points: int
     ) -> AIPart2Suggestion:
         """Предварительная оценка развёрнутого решения по критериям."""
+        ...
+
+    def retell(self, subject: Subject, title: str, text: str) -> AIText:
+        """«Объясни иначе»: пересказ сохранённой теории или примера (ADR-0022)."""
         ...
 
     def generate_similar(self, task: AITaskContext) -> AITaskSuggestion:

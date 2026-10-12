@@ -312,6 +312,11 @@ class YandexAIService:
         parsed, usage = self._ask(user, _Explanation)
         return AIText(parsed.explanation.strip(), usage)
 
+    def retell(self, subject: Subject, title: str, text: str) -> AIText:
+        user = _render("retell", subject=_SUBJECT_NAMES[subject], title=title, text=text[:12000])
+        parsed, usage = self._ask(user, _Explanation)
+        return AIText(parsed.explanation.strip(), usage)
+
     def classify_mistake(
         self,
         task: AITaskContext,

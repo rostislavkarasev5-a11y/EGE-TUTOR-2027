@@ -24,6 +24,7 @@ class AIPurpose(StrEnum):
     CHAT = "CHAT"  # ответ на вопрос ученика (Phase 6.5, ADR-0018)
     SPEECH = "SPEECH"  # озвучка текста (SpeechKit)
     LISTEN = "LISTEN"  # распознавание вопроса, заданного голосом (SpeechKit)
+    RETELL = "RETELL"  # «Объясни иначе»: пересказ теории (Phase 8, ADR-0022)
 
 
 AI_PURPOSE_NAMES: dict[AIPurpose, str] = {
@@ -35,6 +36,7 @@ AI_PURPOSE_NAMES: dict[AIPurpose, str] = {
     AIPurpose.CHAT: "вопрос репетитору",
     AIPurpose.SPEECH: "озвучка",
     AIPurpose.LISTEN: "распознавание голоса",
+    AIPurpose.RETELL: "пересказ теории",
 }
 
 

@@ -44,6 +44,7 @@ from ege_tutor.core.domain import (
     LessonCheck,
     LessonProgress,
     LessonStatus,
+    LessonSuggestion,
     LessonTask,
     MasteryAggregate,
     Mistake,
@@ -187,13 +188,13 @@ class TutorApp:
             ),
         )
         # Учебный цикл (Phase 8, ADR-0022): теория из content/theory/, шаги — в CORE.
-        self.theory = theory or TheoryLibrary()
+        self.theory_library = theory or TheoryLibrary()
         self.learning = LessonService(
             repository,
             clock,
             settings.learning,
             catalog,
-            self.theory,
+            self.theory_library,
             LessonSources(
                 tasks_for_skill=self.practice.tasks_for_skill,
                 start_attempt=self.start_attempt,
@@ -815,6 +816,28 @@ class TutorApp:
 
     def lesson_of_attempt(self, attempt_id: int) -> int | None:
         return self.learning.lesson_of_attempt(attempt_id)
+
+    def retell_theory(self, skill_code: str, example: int | None = None) -> str:
+        """«Объясни иначе»: ИИ пересказывает теорию навыка или её пример (номер с 1)."""
+        theory = self.learning.theory(skill_code)
+        if theory is None:
+            raise AppError("теории по этой теме пока нет")
+        subject, _ = self.learning.skill(skill_code)
+        if example is None:
+            return self.assistant.retell(subject, theory.title, theory.text)
+        if not 1 <= example <= len(theory.examples):
+            raise AppError(f"примера №{example} нет")
+        ex = theory.examples[example - 1]
+        text = f"{ex.statement}\n\nРешение: {ex.solution}\nОтвет: {ex.answer}"
+        return self.assistant.retell(subject, f"{theory.title}, пример «{ex.title}»", text)
+
+    def active_lesson(self, skill_code: str) -> Lesson | None:
+        """Начатый и не законченный блок по навыку."""
+        return self.learning.active(skill_code)
+
+    def lesson_suggestion(self, subject: Subject) -> LessonSuggestion | None:
+        """Какой блок советуем: продолжить начатый или новый по самому слабому навыку."""
+        return self.learning.suggestion(subject)
 
     # ── ИИ-помощник (Phase 6, ADR-0017) ─────────────────────────────────────
 

@@ -18,6 +18,7 @@ from ege_tutor.core.domain import (
     AIUsage,
     ChatTurn,
     SpeechError,
+    Subject,
 )
 from ege_tutor.core.ports.sandbox import RunRequest, RunResult, SandboxVerdict
 
@@ -124,6 +125,12 @@ class FakeAIService:
 
     def explain(self, task: AITaskContext, student_answer: str | None) -> AIText:
         self._call("explain", task)
+        return AIText(self.explanation, usage())
+
+    def retell(self, subject: Subject, title: str, text: str) -> AIText:
+        self.calls.append(("retell", title))
+        if self.error is not None:
+            raise self.error
         return AIText(self.explanation, usage())
 
     def classify_mistake(

@@ -16,6 +16,7 @@ from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -27,6 +28,9 @@ from ege_tutor.core.domain import (
     CODE_VERDICT_LABELS,
     EVENT_KIND_NAMES,
     ITEM_BASIS_NAMES,
+    LESSON_STATUS_NAMES,
+    LESSON_STEP_NAMES,
+    LESSON_STEPS,
     MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
     STOP_REASON_NAMES,
@@ -40,6 +44,8 @@ from ege_tutor.core.domain import (
     EventKind,
     ImportBatchStatus,
     ItemBasis,
+    LessonStatus,
+    LessonStep,
     MistakeCategory,
     PlanItemKind,
     PlanItemStatus,
@@ -153,6 +159,42 @@ def display_answer(task: Task) -> str:
     return task.answer
 
 
+def theory_html(text: str) -> Markup:
+    """Текст теории в HTML: «## » — заголовок, «- » — пункт списка, пустая строка — абзац.
+
+    Всё остальное экранируется: разметка в тексте теории не исполняется.
+    """
+    out: list[str] = []
+    items: list[str] = []
+    paragraph: list[str] = []
+
+    def flush() -> None:
+        if paragraph:
+            out.append("<p>" + "<br>".join(paragraph) + "</p>")
+            paragraph.clear()
+        if items:
+            out.append("<ul>" + "".join(f"<li>{i}</li>" for i in items) + "</ul>")
+            items.clear()
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            flush()
+        elif line.startswith("#"):
+            flush()
+            out.append(f"<h3>{escape(line.lstrip('#').strip())}</h3>")
+        elif line.startswith(("- ", "* ")):
+            if paragraph:
+                flush()
+            items.append(str(escape(line[2:].strip())))
+        else:
+            if items:
+                flush()
+            paragraph.append(str(escape(line)))
+    flush()
+    return Markup("\n".join(out))
+
+
 def utc_time(value: dt.datetime | None) -> str:
     return value.strftime("%d.%m.%Y %H:%M") + " UTC" if value else "—"
 
@@ -246,6 +288,11 @@ def create_app(
         ItemBasis=ItemBasis,
         DiagnosticStatus=DiagnosticStatus,
         PlanItemKind=PlanItemKind,
+        LessonStep=LessonStep,
+        LessonStatus=LessonStatus,
+        LESSON_STEPS=LESSON_STEPS,
+        LESSON_STEP_NAMES=LESSON_STEP_NAMES,
+        LESSON_STATUS_NAMES=LESSON_STATUS_NAMES,
         PlanItemStatus=PlanItemStatus,
         ControlStatus=ControlStatus,
         DisciplineColor=DisciplineColor,
@@ -260,7 +307,9 @@ def create_app(
         speech_max_seconds=tutor.settings.app.speech.max_recording_seconds,
         version=__version__,
     )
-    templates.env.filters.update(minutes=minutes, display_answer=display_answer, utc_time=utc_time)
+    templates.env.filters.update(
+        minutes=minutes, display_answer=display_answer, utc_time=utc_time, theory_html=theory_html
+    )
 
     # ── сессия, вход, CSRF ──
 
@@ -827,6 +876,163 @@ def create_app(
             flash(request, str(e), "error")
         return redirect(f"/control/{session_id}")
 
+    # ── учёба (Phase 8, ADR-0022) ──
+
+    @app.get("/learn", response_class=HTMLResponse)
+    def learn_page(request: Request):
+        require_login(request)
+        lessons = core.lessons(limit=100)
+        return render(
+            request,
+            "learn.html",
+            suggestions=[s for s in (core.lesson_suggestion(subj) for subj in Subject) if s],
+            active=[x for x in lessons if x.status == LessonStatus.ACTIVE],
+            finished=[x for x in lessons if x.status != LessonStatus.ACTIVE][:20],
+            topics={subj: core.catalog.topics_of(subj) for subj in Subject},
+            has_theory=core.has_theory,
+        )
+
+    @app.get("/learn/skill/{skill_code}")
+    def learn_skill(request: Request, skill_code: str):
+        """Блок по навыку: открыть начатый или предложить начать."""
+        require_login(request)
+        try:
+            subject, skill = core.skill(skill_code)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/learn")
+        active = core.active_lesson(skill_code)
+        if active is not None:
+            return redirect(f"/lessons/{active.id}")
+        return render(
+            request,
+            "lesson_start.html",
+            subject=subject,
+            skill=skill,
+            theory=core.theory(skill_code),
+            config=tutor.settings.learning,
+        )
+
+    @app.post("/learn/start")
+    async def learn_start(request: Request, skill_code: Annotated[str, Form()] = ""):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            lesson = core.start_lesson(skill_code)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/learn")
+        return redirect(f"/lessons/{lesson.id}")
+
+    @app.get("/lessons/{lesson_id}", response_class=HTMLResponse)
+    def lesson_page(request: Request, lesson_id: int):
+        require_login(request)
+        try:
+            progress = core.lesson_progress(lesson_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/learn")
+        lesson = progress.lesson
+        subject, skill = core.skill(lesson.skill_code)
+        check = core.lesson_check(lesson_id)
+        tasks = core.lesson_tasks(lesson_id)
+        review = []
+        if lesson.step == LessonStep.MISTAKE_REVIEW:
+            by_attempt = {t.attempt_id: t for t in tasks}
+            for attempt_id in check.problems:
+                item = by_attempt[attempt_id]
+                review.append((item, core.attempt(attempt_id), core.task(item.task_id)))
+        return render(
+            request,
+            "lesson.html",
+            lesson=lesson,
+            progress=progress,
+            subject=subject,
+            skill=skill,
+            theory=core.theory(lesson.skill_code),
+            check=check,
+            tasks=tasks,
+            review=review,
+            config=tutor.settings.learning,
+        )
+
+    async def lesson_action(request: Request, lesson_id: int, action) -> RedirectResponse:
+        require_login(request)
+        await check_csrf(request)
+        try:
+            action()
+        except AppError as e:
+            flash(request, str(e), "error")
+        return redirect(f"/lessons/{lesson_id}")
+
+    @app.post("/lessons/{lesson_id}/confirm")
+    async def lesson_confirm(request: Request, lesson_id: int):
+        return await lesson_action(request, lesson_id, lambda: core.confirm_lesson_step(lesson_id))
+
+    @app.post("/lessons/{lesson_id}/reviewed/{attempt_id}")
+    async def lesson_reviewed(request: Request, lesson_id: int, attempt_id: int):
+        return await lesson_action(
+            request, lesson_id, lambda: core.mark_lesson_mistake_reviewed(lesson_id, attempt_id)
+        )
+
+    @app.post("/lessons/{lesson_id}/abandon")
+    async def lesson_abandon(request: Request, lesson_id: int):
+        return await lesson_action(request, lesson_id, lambda: core.abandon_lesson(lesson_id))
+
+    @app.post("/lessons/{lesson_id}/next")
+    async def lesson_next(request: Request, lesson_id: int):
+        """Следующая задача шага. Если задач на шаге больше нет — на страницу блока."""
+        require_login(request)
+        await check_csrf(request)
+        try:
+            attempt = core.lesson_attempt(lesson_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(f"/lessons/{lesson_id}")
+        if attempt is None:
+            return redirect(f"/lessons/{lesson_id}")
+        return redirect(f"/attempts/{attempt.id}")
+
+    def show_theory(
+        request: Request, skill_code: str, retold: str | None = None, retold_for: int = -1
+    ):
+        try:
+            subject, skill = core.skill(skill_code)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/learn")
+        return render(
+            request,
+            "theory.html",
+            subject=subject,
+            skill=skill,
+            theory=core.theory(skill_code),
+            active=core.active_lesson(skill_code),
+            ai=core.ai_status(),
+            retold=retold,
+            retold_for=retold_for,
+        )
+
+    @app.get("/theory/{skill_code}", response_class=HTMLResponse)
+    def theory_page(request: Request, skill_code: str):
+        require_login(request)
+        return show_theory(request, skill_code)
+
+    @app.post("/theory/{skill_code}/retell", response_class=HTMLResponse)
+    async def theory_retell(
+        request: Request, skill_code: str, example: Annotated[str, Form()] = ""
+    ):
+        """«Объясни иначе»: пересказ ИИ, показывается сразу и не сохраняется (ADR-0022)."""
+        require_login(request)
+        await check_csrf(request)
+        number = _parse_int(example)
+        try:
+            text = core.retell_theory(skill_code, number)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(f"/theory/{skill_code}")
+        return show_theory(request, skill_code, text, number or 0)
+
     # ── задачи ──
 
     @app.get("/tasks", response_class=HTMLResponse)
@@ -935,6 +1141,8 @@ def create_app(
         if control_id is not None and attempt.status != AttemptStatus.IN_PROGRESS:
             return redirect(f"/control/{control_id}")
         control = core.control_session(control_id) if control_id is not None else None
+        lesson_id = core.lesson_of_attempt(attempt_id)
+        lesson = core.lesson(lesson_id) if lesson_id is not None else None
         notes = request.session.get("result_notes", {})
         subject, item = request.session.get("solve_filter", ["", ""])
         runs = []
@@ -973,6 +1181,7 @@ def create_app(
             filter_item=item,
             diagnostic=core.diagnostic_state(session_id) if session_id is not None else None,
             control=control,
+            lesson=lesson,
             control_done=(
                 sum(1 for r in core.control_results(control.id) if r.attempt_id is not None)
                 if control is not None

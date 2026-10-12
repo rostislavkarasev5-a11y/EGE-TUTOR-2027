@@ -8,7 +8,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ege_tutor.core.app import TutorApp
-from ege_tutor.core.domain import Subject
+from ege_tutor.core.domain import PlanItemKind, Subject
 from ege_tutor.interfaces.cli.main import app
 from tests.conftest import REPO_ROOT
 
@@ -360,9 +360,14 @@ def test_plan_calendar_and_discipline():
     assert invoke("plan-add", "inf", "27", "--tasks", "3").exit_code == 1  # правило 80/20
     assert invoke("plan-add", "math", "1").exit_code == 0
 
-    item_id = TutorApp.create().daily_plan().items[0].id
+    items = TutorApp.create().daily_plan().items
+    own_page = (PlanItemKind.DIAGNOSTIC, PlanItemKind.CONTROL, PlanItemKind.LESSON)
+    item_id = next(i.id for i in items if i.kind not in own_page)
     stopped = runner.invoke(app, ["plan-do", str(item_id)], input="выход\n")
     assert stopped.exit_code == 0, stopped.output
+    lesson = next((i for i in items if i.kind == PlanItemKind.LESSON), None)
+    if lesson is not None:
+        assert "ege learn" in invoke("plan-do", str(lesson.id)).output
     assert invoke("plan-do", "99999").exit_code == 1
 
     excused = invoke("excuse", "температура")
@@ -402,3 +407,24 @@ def test_control_loop(monkeypatch):
     listed = invoke("controls")
     assert "Контрольные" in listed.output
     assert invoke("controls", "1").exit_code == 0
+
+
+def test_learn_lessons_theory():
+    tutor = TutorApp.create()
+    tutor.install_starter_bank()
+    tutor.close()
+    assert "теории по этой теме пока нет" in invoke("theory", "M01.area").output.lower()
+    shown = invoke("theory", "M04.classical").output
+    assert "Классическое определение вероятности" in shown and "Пример 7" in shown
+    assert invoke("theory", "X.nope").exit_code == 1
+    assert "Советую" in invoke("lessons").output
+    # теория → 7 примеров (Enter после каждого) → прервал на первой задаче
+    answers = "y\n" + "\n" * 7 + "y\nвыход\n"
+    result = runner.invoke(app, ["learn", "M04.classical"], input=answers)
+    assert result.exit_code == 0, result.output
+    assert "Шаг: самостоятельные" in result.output
+    assert "Продолжить потом: ege learn M04.classical" in result.output
+    listed = invoke("lessons").output
+    assert "M04.classical" in listed and "идёт" in listed
+    assert invoke("learn", "M04.classical", "--abandon").exit_code == 0
+    assert "брошен" in invoke("lessons").output

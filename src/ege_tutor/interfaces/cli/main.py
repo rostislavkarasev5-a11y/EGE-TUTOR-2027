@@ -20,6 +20,7 @@ from ege_tutor.core.domain import (
     AI_LABEL,
     AI_PURPOSE_NAMES,
     ITEM_BASIS_NAMES,
+    LESSON_STATUS_NAMES,
     MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
     STOP_REASON_NAMES,
@@ -42,6 +43,8 @@ from ege_tutor.core.domain import (
     ImportBatchStatus,
     ImportReport,
     ItemBasis,
+    LessonStatus,
+    LessonStep,
     MistakeCategory,
     PlanItemKind,
     ReviewReason,
@@ -561,14 +564,23 @@ def _report_result(attempt: Attempt, explanation: str) -> None:
 
 
 def _solve_one(
-    tutor: TutorApp, t: Task, mode: AttemptMode = AttemptMode.PRACTICE
+    tutor: TutorApp,
+    t: Task,
+    mode: AttemptMode = AttemptMode.PRACTICE,
+    started: Attempt | None = None,
+    retry: bool = True,
 ) -> tuple[str, Task | None]:
-    """Решать задачу до верного ответа или отказа. Возвращает (что дальше, следующая задача)."""
+    """Решать задачу до верного ответа или отказа. Возвращает (что дальше, следующая задача).
+
+    started — уже начатая попытка (например, задача учебного блока); retry=False — без
+    «Попробовать ещё раз?» (в учебном блоке на каждую задачу одна попытка).
+    """
     while True:
         try:
-            attempt = tutor.start_attempt(t.id, mode)
+            attempt = started or tutor.start_attempt(t.id, mode)
         except AppError as e:
             raise _fail(str(e)) from e
+        started = None
         _show_task_for_solving(tutor, t, attempt)
         while True:
             try:
@@ -624,7 +636,7 @@ def _solve_one(
             _report_mistakes(tutor, attempt.id)
             if result.attempt.correct:
                 return "next", None
-            if _ask_yes_no("Попробовать ещё раз?"):
+            if retry and _ask_yes_no("Попробовать ещё раз?"):
                 break
             _show_answer(t)
             return "next", None
@@ -1483,6 +1495,10 @@ def plan_do(item_id: Annotated[int, typer.Argument(help="Номер пункта
                 f"Это контрольная: ege control {item.subject.value.lower()} {item.exam_item}"
             )
             return
+        if item.kind in (PlanItemKind.LESSON, PlanItemKind.HOMEWORK):
+            what = "учебный блок" if item.kind == PlanItemKind.LESSON else "домашка блока"
+            console.print(f"Это {what}: ege learn {item.skill_code}")
+            return
         try:
             task_, mode = tutor.plan_item_task(item_id)
         except AppError as e:
@@ -1772,3 +1788,146 @@ def controls(
             f"{c.status_name} · {c.passed_tasks} из {c.total_tasks}",
         )
     console.print(table)
+
+
+# ── учёба (Phase 8, ADR-0022) ───────────────────────────────────────────────
+
+
+def _print_theory(tutor: TutorApp, skill_code: str, examples: bool = True) -> bool:
+    theory = tutor.theory(skill_code)
+    if theory is None:
+        console.print("Теории по этой теме пока нет.")
+        return False
+    console.print(f"[dim]{AI_LABEL}: теорию написал ИИ своими словами, это не материал ФИПИ.[/]")
+    console.print(_panel(Text(theory.text), title=theory.title, title_align="left"))
+    if examples:
+        for number, ex in enumerate(theory.examples, start=1):
+            body = Text(f"{ex.statement}\n\nРешение: {ex.solution}\nОтвет: {ex.answer}")
+            console.print(_panel(body, title=f"Пример {number}. {ex.title}", title_align="left"))
+    return True
+
+
+@app.command()
+def theory(skill_code: Annotated[str, typer.Argument(help="Код навыка, например M04.classical.")]):
+    """Теория и разобранные примеры по навыку."""
+    tutor = _tutor()
+    try:
+        _, skill = tutor.skill(skill_code)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(f"[bold]{skill.title}[/] ({skill.code})")
+    _print_theory(tutor, skill_code)
+
+
+@app.command()
+def lessons() -> None:
+    """Учебные блоки: начатые и пройденные."""
+    tutor = _tutor()
+    found = tutor.lessons(limit=100)
+    if not found:
+        console.print("Учебных блоков ещё не было. Начать: ege learn M04.classical")
+        for subject in Subject:
+            suggestion = tutor.lesson_suggestion(subject)
+            if suggestion:
+                console.print(
+                    f"Советую ({SUBJECT_NAMES[subject]}): {suggestion.reason} — "
+                    f"ege learn {suggestion.skill_code}"
+                )
+        return
+    table = _table(title="Учебные блоки")
+    for column in ("№", "Навык", "Шаг", "Статус", "Начат"):
+        table.add_column(column)
+    for x in found:
+        table.add_row(
+            str(x.id),
+            f"{tutor.skill_title(x.skill_code)} ({x.skill_code})",
+            x.step_name,
+            LESSON_STATUS_NAMES[x.status],
+            f"{x.started_at:%d.%m.%Y}",
+        )
+    console.print(table)
+
+
+@app.command()
+def learn(
+    skill_code: Annotated[str, typer.Argument(help="Код навыка, например M04.classical.")],
+    abandon: Annotated[bool, typer.Option("--abandon", help="Бросить начатый блок.")] = False,
+) -> None:
+    """Учебный блок по навыку: теория → примеры → задачи → проверка → ошибки → домашка."""
+    tutor = _tutor()
+    try:
+        _, skill = tutor.skill(skill_code)
+        if abandon:
+            active = tutor.active_lesson(skill_code)
+            if active is None:
+                raise _fail("начатого блока по этому навыку нет")
+            tutor.abandon_lesson(active.id)
+            console.print("Блок брошен. Попытки и ошибки сохранены в истории.")
+            return
+        lesson = tutor.start_lesson(skill_code)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(f"Учебный блок №{lesson.id}: [bold]{skill.title}[/]")
+    while True:
+        lesson = tutor.lesson(lesson.id)
+        if lesson.status != LessonStatus.ACTIVE:
+            check = tutor.lesson_check(lesson.id)
+            console.print(
+                f"[green]Блок пройден.[/] Самостоятельные: верно без подсказок "
+                f"{check.good} из {check.total}."
+            )
+            return
+        step = lesson.step
+        console.print(f"\n[bold]Шаг: {lesson.step_name}[/]")
+        if step == LessonStep.THEORY:
+            _print_theory(tutor, skill_code, examples=False)
+            if not _ask_yes_no("Прочитал, дальше?"):
+                return
+            tutor.confirm_lesson_step(lesson.id)
+        elif step == LessonStep.EXAMPLES:
+            theory_ = tutor.theory(skill_code)
+            for number, ex in enumerate(theory_.examples if theory_ else (), start=1):
+                console.print(_panel(Text(ex.statement), title=f"Пример {number}. {ex.title}"))
+                typer.prompt(
+                    "Подумай и нажми Enter, чтобы увидеть решение", default="", show_default=False
+                )
+                console.print(Text(f"Решение: {ex.solution}\nОтвет: {ex.answer}"))
+            if not theory_ or not theory_.examples:
+                console.print("Разобранных примеров по этой теме пока нет.")
+            if not _ask_yes_no("Понял, к задачам?"):
+                return
+            tutor.confirm_lesson_step(lesson.id)
+        elif step == LessonStep.CHECK:
+            check = tutor.lesson_check(lesson.id)
+            console.print(f"Верно без подсказок: {check.good} из {check.total}.")
+            if not _ask_yes_no("Дальше?"):
+                return
+            tutor.confirm_lesson_step(lesson.id)
+        elif step == LessonStep.MISTAKE_REVIEW:
+            for attempt_id in tutor.lesson_check(lesson.id).problems:
+                item = next(t for t in tutor.lesson_tasks(lesson.id) if t.attempt_id == attempt_id)
+                if item.reviewed:
+                    continue
+                task = tutor.task(item.task_id)
+                console.print(_panel(Text(task.statement), title=f"Ошибка: задача {task.id}"))
+                _show_answer(task)
+                _report_mistakes(tutor, attempt_id)
+                if not _ask_yes_no("Разобрал?"):
+                    return
+                tutor.mark_lesson_mistake_reviewed(lesson.id, attempt_id)
+        else:
+            progress = tutor.lesson_progress(lesson.id)
+            console.print(f"Решено {progress.done} из {progress.target}.")
+            attempt = tutor.lesson_attempt(lesson.id)
+            if attempt is None:
+                if tutor.lesson(lesson.id).step == step:  # задач нет, а шаг не сменился
+                    raise _fail("задачи для этого шага закончились")
+                continue
+            if step == LessonStep.HOMEWORK and not _ask_yes_no("Делать домашку сейчас?"):
+                return
+            outcome, _ = _solve_one(
+                tutor, tutor.task(attempt.task_id), started=attempt, retry=False
+            )
+            if outcome == "exit":
+                console.print(f"Продолжить потом: ege learn {skill_code}")
+                return

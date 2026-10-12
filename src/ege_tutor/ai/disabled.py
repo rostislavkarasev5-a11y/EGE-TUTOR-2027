@@ -9,6 +9,7 @@ from ege_tutor.core.domain import (
     AITaskSuggestion,
     AIText,
     ChatTurn,
+    Subject,
 )
 
 DEFAULT_REASON = "ИИ выключен в настройках"
@@ -48,6 +49,9 @@ class DisabledAIService:
         raise self._refuse()
 
     def explain(self, task: AITaskContext, student_answer: str | None) -> AIText:
+        raise self._refuse()
+
+    def retell(self, subject: Subject, title: str, text: str) -> AIText:
         raise self._refuse()
 
     def classify_mistake(
