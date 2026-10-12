@@ -1,6 +1,13 @@
 """Эталонное решение: информатика №13, задача 1 (стартовый банк, ИИ)."""
 
-from ipaddress import ip_interface
 
-net = ip_interface("172.19.205.77/255.255.240.0").network
-print(str(net.network_address).split(".")[2])
+def count(a, b):
+    """Число программ, переводящих a в b командами +1, +3, ×2."""
+    if a == b:
+        return 1
+    if a > b:
+        return 0
+    return count(a + 1, b) + count(a + 3, b) + count(a * 2, b)
+
+
+print(count(2, 21))

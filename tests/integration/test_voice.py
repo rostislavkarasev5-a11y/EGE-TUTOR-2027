@@ -23,12 +23,12 @@ defaults:
   source: USER_MATERIAL
   source_ref: "тест"
 tasks:
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 3x − 7 = 11."
     answer: 6
     solution: "3x = 18, x = 6."
     hints: ["Перенеси −7 вправо.", "Получится 3x = 18."]
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 2^x = 1024."
     answer: 10
     solution: "1024 = 2^10."

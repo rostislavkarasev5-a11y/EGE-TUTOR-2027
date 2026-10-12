@@ -1,11 +1,17 @@
 """Эталонное решение: информатика №13, задача 2 (стартовый банк, ИИ)."""
 
-from ipaddress import ip_address, ip_interface
+FORBIDDEN = 30
 
-target = ip_address("118.46.144.0")
-count = sum(
-    1
-    for prefix in range(33)
-    if ip_interface(f"118.46.147.29/{prefix}").network.network_address == target
-)
-print(count)
+
+def count(a, b):
+    """Число программ из a в b командами +1, +2, ×3, траектория не проходит через 30."""
+    if a == FORBIDDEN:
+        return 0
+    if a == b:
+        return 1
+    if a > b:
+        return 0
+    return count(a + 1, b) + count(a + 2, b) + count(a * 3, b)
+
+
+print(count(3, 12) * count(12, 40))

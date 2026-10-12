@@ -141,28 +141,28 @@ def m5_3():
     return share[2] * defect[2] / p_def
 
 
-def m6_1():
+def m7_1():
     return sp.solve(sp.Eq(7 ** (x - 2), 49), x)
 
 
-def m6_2():
+def m7_2():
     roots = sp.solve(sp.Eq(sp.sqrt(2 * x + 19), x + 2), x)
     return max(roots)
 
 
-def m6_3():
+def m7_3():
     return sp.solve(sp.Eq(sp.log(x + 3, 2) + sp.log(x - 1, 2), 5), x)
 
 
-def m7_1():
+def m8_1():
     return sp.Integer(12) ** 7 / (sp.Integer(4) ** 6 * sp.Integer(3) ** 7)
 
 
-def m7_2():
+def m8_2():
     return sp.simplify(sp.log(75, 5) - sp.log(3, 5) + 9 ** sp.log(4, 3))
 
 
-def m7_3():
+def m8_3():
     alpha = sp.symbols("alpha")
     sols = sp.solve(sp.Eq(sp.cos(alpha), sp.Rational(-5, 13)), alpha)
     sols = [s % (2 * sp.pi) for s in sols]
@@ -171,34 +171,34 @@ def m7_3():
     return sp.nsimplify(sp.tan(good[0]))
 
 
-def m8_1():
+def m9_1():
     return sp.diff(t**3 - 4 * t**2 + 5 * t, t).subs(t, 3)
 
 
-def m8_2():
+def m9_2():
     f = x**2 - 5 * x + 7
     (x0,) = sp.solve(sp.Eq(sp.diff(f, x), 3), x)
     return f.subs(x, x0)
 
 
-def m8_3():
+def m9_3():
     f = -(x**2) + 4 * x + 5
     lo, hi = sorted(sp.solve(f, x))
     assert f.subs(x, (lo + hi) / 2) > 0
     return sp.integrate(f, (x, lo, hi))
 
 
-def m9_1():
+def m10_1():
     return sp.solve(sp.Eq(sp.Rational(18, 10) * x + 32, 113), x)
 
 
-def m9_2():
+def m10_2():
     h = sp.Rational(14, 10) + 14 * t - 5 * t**2
     s = sp.solve_univariate_inequality(h >= sp.Rational(94, 10), t, relational=False)
     return s.measure
 
 
-def m9_3():
+def m10_3():
     d1, d2 = sp.symbols("d1 d2", positive=True)
     f = 30
     d1_of_d2 = sp.solve(sp.Eq(1 / d1 + 1 / d2, sp.Rational(1, f)), d1)[0]
@@ -209,61 +209,41 @@ def m9_3():
     return d1_of_d2.subs(d2, 150)
 
 
-def m10_1():
+def m11_1():
     price = F(40) * F(115, 100)
     return F(920) / price
 
 
-def m10_2():
+def m11_2():
     v = sp.symbols("v", positive=True)
     roots = sp.solve(sp.Eq(48 / (v + 2) + 48 / (v - 2), 7), v)
     return [r for r in roots if r > 2]
 
 
-def m10_3():
+def m11_3():
     y = sp.symbols("y", positive=True)
     roots = sp.solve(sp.Eq(1 / y + 1 / (y - 5), sp.Rational(1, 6)), y)
     return [r for r in roots if r > 5]
 
 
-def m11_1():
+def m12_1():
     k, b = sp.symbols("k b")
     sol = sp.solve([sp.Eq(-k + b, 7), sp.Eq(3 * k + b, -5)], [k, b])
     return sol[k] * 10 + sol[b]
 
 
-def m11_2():
+def m12_2():
     pa, pb, pc = sp.symbols("pa pb pc")
     f = pa * x**2 + pb * x + pc
     sol = sp.solve([f.subs(x, 0) - 3, f.subs(x, 1), f.subs(x, 2) + 1], [pa, pb, pc])
     return f.subs(sol).subs(x, 5)
 
 
-def m11_3():
+def m12_3():
     k, s = sp.symbols("k s")
     sols = sp.solve([sp.Eq(k / (1 + s), 2), sp.Eq(k / (3 + s), 1)], [k, s], dict=True)
     (sol,) = sols
     return (k / (x + s)).subs(sol).subs(x, 9)
-
-
-def _extreme_on(f, lo, hi, kind):
-    crit = [c for c in sp.solve(sp.diff(f, x), x) if c.is_real and lo <= c <= hi]
-    values = [f.subs(x, p) for p in [lo, hi, *crit]]
-    return sp.simplify(max(values) if kind == "max" else min(values))
-
-
-def m12_1():
-    f = x**3 - 12 * x + 5
-    d2 = sp.diff(f, x, 2)
-    return [c for c in sp.solve(sp.diff(f, x), x) if d2.subs(x, c) > 0]
-
-
-def m12_2():
-    return _extreme_on(x**3 - 3 * x**2 - 9 * x + 4, -2, 2, "max")
-
-
-def m12_3():
-    return _extreme_on((x - 6) * sp.exp(x - 5), 3, 7, "min")
 
 
 def _roots_on(expr, lo, hi) -> list:
@@ -274,26 +254,26 @@ def _roots_on(expr, lo, hi) -> list:
     return sorted(roots, key=lambda r: float(r))
 
 
-def m13_1():
+def m14_1():
     return len(_roots_on(2 * sp.sin(x) ** 2 + sp.sin(x) - 1, -2 * sp.pi, sp.pi))
 
 
-def m13_2():
+def m14_2():
     return _roots_on(4**x - 5 * 2 ** (x + 1) + 16, sp.log(5, 2), 4)
 
 
-def m13_3():
+def m14_3():
     roots = _roots_on(sp.sin(2 * x) - sp.sqrt(3) * sp.cos(x), -5 * sp.pi / 2, -sp.pi)
     return sp.simplify(sum(roots) * 180 / sp.pi)
 
 
-def m14_1():
+def m15_1():
     A, B, C = (0, 0, 0), (6, 0, 0), (6, 8, 0)
     C1 = (6, 8, 5)
     return _dist_point_plane(B, A, C, C1)
 
 
-def m14_2():
+def m15_2():
     s3 = sp.sqrt(3)
     A, B = sp.Matrix([0, 0, 0]), sp.Matrix([6, 0, 0])
     B1, C1 = sp.Matrix([6, 0, 6]), sp.Matrix([3, 3 * s3, 6])
@@ -302,7 +282,7 @@ def m14_2():
     return sp.simplify(sp.Abs(u.dot(w)) / (u.norm() * w.norm()))
 
 
-def m14_3():
+def m15_3():
     A, B, C, S = (-8, -8, 0), (8, -8, 0), (8, 8, 0), (0, 0, 6)
     return sp.simplify(_dist_point_plane(A, S, B, C))
 
@@ -314,7 +294,7 @@ def _integer_solutions(pred, lo=-200, hi=200) -> list[int]:
     return sols
 
 
-def m15_1():
+def m16_1():
     def pred(n):
         if n == 6:
             return False
@@ -323,7 +303,7 @@ def m15_1():
     return len(_integer_solutions(pred))
 
 
-def m15_2():
+def m16_2():
     def pred(n):
         p = F(2) ** n
         return p * p - 9 * p + 8 <= 0
@@ -331,7 +311,7 @@ def m15_2():
     return sum(_integer_solutions(pred))
 
 
-def m15_3():
+def m16_3():
     def pred(n):
         u, v = n * n - 4 * n, n + 6
         if u <= 0 or v <= 0:
@@ -342,7 +322,7 @@ def m15_3():
     return sum(_integer_solutions(pred, -50, 50))
 
 
-def m16_1():
+def m13_1():
     debt, n, rate = F(1_200_000), 10, F(2, 100)
     step = debt / n
     paid = F(0)
@@ -355,7 +335,7 @@ def m16_1():
     return paid
 
 
-def m16_2():
+def m13_2():
     def final(x_):
         s = F(1000)
         for year in range(1, 5):
@@ -367,7 +347,7 @@ def m16_2():
     return next(x_ for x_ in range(0, 2000) if final(x_) >= 2000)
 
 
-def m16_3():
+def m13_3():
     s, p = sp.symbols("s p")
     payment = sp.Rational(2_662_000, 2)
     debt = s
@@ -376,13 +356,13 @@ def m16_3():
     return sp.solve(debt.subs(p, payment), s)
 
 
-def m17_1():
+def m18_1():
     tri = sp.Triangle(sp.Point(15, 0), sp.Point(0, 20), sp.Point(0, 0))  # A, B, C
     alt = tri.altitudes[sp.Point(0, 0)]
     return alt.length
 
 
-def m17_2():
+def m18_2():
     h = sp.Rational(2 * 64, 12 + 4)
     A, D, B, C = (sp.Point(*p) for p in [(0, 0), (12, 0), (2, h), (6, h)])
     assert sp.Polygon(A, B, C, D).area.__abs__() == 64
@@ -390,7 +370,7 @@ def m17_2():
     return abs(sp.Triangle(A, cross, D).area)
 
 
-def m17_3():
+def m18_3():
     B, C = sp.Point(0, 0), sp.Point(14, 0)
     px, py = sp.symbols("px py", real=True)
     sols = sp.solve([px**2 + py**2 - 169, (px - 14) ** 2 + py**2 - 225], [px, py], dict=True)
@@ -406,12 +386,12 @@ def _real_roots(expr) -> set:
     return {r for r in sp.solve(expr, x) if r.is_real}
 
 
-def m18_1():
+def m19_1():
     poly = sp.Poly(x**2 - 2 * a * x + a + 6, x)
     return sorted(sp.solve(sp.discriminant(poly, x), a))
 
 
-def m18_2():
+def m19_2():
     good = []
     for av in range(-30, 31):
         roots = _real_roots(x**2 - 4 * x - av) | _real_roots(x**2 - 4 * x + av)
@@ -421,7 +401,7 @@ def m18_2():
     return good
 
 
-def m18_3():
+def m19_3():
     good = []
     for av in range(-30, 31):
         under_root = (5 - x) * (x + 3)
@@ -432,11 +412,11 @@ def m18_3():
     return good
 
 
-def m19_1():
+def m20_1():
     return next(n for n in range(1, 10_000) if n % 5 == 3 and n % 7 == 4 and n % 9 == 2)
 
 
-def m19_2():
+def m20_2():
     # рюкзак 0/1: наибольшее количество различных натуральных чисел с суммой ровно 100
     best = [None] * 101
     best[0] = 0
@@ -447,7 +427,7 @@ def m19_2():
     return best[100]
 
 
-def m19_3():
+def m20_3():
     nums = list(range(1, 21))
     conflict = {n: {m for m in nums if m != n and (n + m) % 7 == 0} for n in nums}
 
@@ -462,6 +442,41 @@ def m19_3():
         return max(without_v, with_v)
 
     return mis(frozenset(nums))
+
+
+def m6_1():
+    return F(1) * F(2, 10) + 2 * F(5, 10) + 4 * F(3, 10)
+
+
+def m6_2():
+    dist = {-1: F(3, 10), 0: F(5, 10), 3: F(2, 10)}
+    mean = sum(v * p for v, p in dist.items())
+    return sum(p * (v - mean) ** 2 for v, p in dist.items())
+
+
+def m6_3():
+    # прямой подсчёт по биномиальному распределению, без готовых формул
+    p, n = F(8, 10), 5
+    return sum(sp.binomial(n, k) * p**k * (1 - p) ** (n - k) * k**2 for k in range(n + 1))
+
+
+def m17_1():
+    return min(
+        5000 * a_ + 3000 * b_ for a_ in range(0, 9) for b_ in range(0, 14) if 7 * a_ + 4 * b_ >= 50
+    )
+
+
+def m17_2():
+    return max(
+        3 * x_ + 4 * y_
+        for x_ in range(0, 41)
+        for y_ in range(0, 16)
+        if 2 * x_ + y_ <= 40 and x_ + 3 * y_ <= 45
+    )
+
+
+def m17_3():
+    return max(10 * x_ - x_**2 + 8 * (10 - x_) - (10 - x_) ** 2 for x_ in range(0, 11))
 
 
 CHECKS: dict[str, Callable] = {
@@ -522,6 +537,9 @@ CHECKS: dict[str, Callable] = {
     REF.format(item=19, n=1): m19_1,
     REF.format(item=19, n=2): m19_2,
     REF.format(item=19, n=3): m19_3,
+    REF.format(item=20, n=1): m20_1,
+    REF.format(item=20, n=2): m20_2,
+    REF.format(item=20, n=3): m20_3,
 }
 
 
@@ -530,10 +548,10 @@ CHECKS: dict[str, Callable] = {
 
 def test_bank_structure():
     tasks = _tasks()
-    assert len(tasks) == 57
+    assert len(tasks) == 60
     refs = [task["source_ref"] for task in tasks]
     assert len(set(refs)) == len(refs)
-    for item in range(1, 20):
+    for item in range(1, 21):
         of_item = [task for task in tasks if task["exam_item"] == item]
         assert sorted(task["difficulty"] for task in of_item) == [2, 3, 4], item
         for task in of_item:
@@ -570,5 +588,5 @@ def test_bank_imports_cleanly(tutor):
     report = tutor.preview_import(BANK, starter_bank=True)
     assert report.errors == []
     assert report.warnings == []
-    assert len(report.accepted) == 57
+    assert len(report.accepted) == 60
     assert report.rejected_rows == set()

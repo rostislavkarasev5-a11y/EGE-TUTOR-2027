@@ -26,18 +26,18 @@ defaults:
   source: USER_MATERIAL
   source_ref: "тест"
 tasks:
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 3x − 7 = 11."
     answer: 6
     solution: "3x = 18, x = 6."
     hints: ["Перенеси −7 вправо.", "Получится 3x = 18."]
     skills: [M06.algebraic]
-  - exam_item: 6
+  - exam_item: 7
     statement: "Решите уравнение 2^x = 8."
     answer: 3
     solution: "8 = 2^3, x = 3."
     skills: [M06.exponential]
-  - exam_item: 13
+  - exam_item: 14
     statement: "Решите уравнение и отберите корни на отрезке."
     solution: "Эталонное решение."
 """

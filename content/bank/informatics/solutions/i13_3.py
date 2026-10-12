@@ -1,6 +1,19 @@
 """Эталонное решение: информатика №13, задача 3 (стартовый банк, ИИ)."""
 
-from ipaddress import ip_network
 
-net = ip_network("203.88.164.0/255.255.252.0")
-print(sum(1 for address in net if bin(int(address)).count("1") % 5 == 0))
+def count(a, b, must, visited=False):
+    """Программы из a в b (команды +1, ×2, ×3), не проходящие через 30;
+    must — числа, хотя бы одно из которых должно встретиться в траектории."""
+    if a == 30 or a > b:
+        return 0
+    visited = visited or a in must
+    if a == b:
+        return 1 if visited else 0
+    return (
+        count(a + 1, b, must, visited)
+        + count(a * 2, b, must, visited)
+        + count(a * 3, b, must, visited)
+    )
+
+
+print(count(2, 60, {10, 15}))

@@ -1,17 +1,34 @@
 """Эталонное решение: информатика №23, задача 2 (стартовый банк, ИИ)."""
 
-FORBIDDEN = 30
+import heapq
 
+ROADS = {
+    ("A", "B"): 7,
+    ("A", "C"): 3,
+    ("B", "C"): 2,
+    ("B", "D"): 4,
+    ("C", "D"): 8,
+    ("C", "E"): 6,
+    ("D", "E"): 1,
+    ("D", "F"): 5,
+    ("E", "F"): 9,
+}
 
-def count(a, b):
-    """Число программ из a в b командами +1, +2, ×3, траектория не проходит через 30."""
-    if a == FORBIDDEN:
-        return 0
-    if a == b:
-        return 1
-    if a > b:
-        return 0
-    return count(a + 1, b) + count(a + 2, b) + count(a * 3, b)
+graph: dict[str, list[tuple[str, int]]] = {}
+for (a, b), length in ROADS.items():  # дороги двусторонние
+    graph.setdefault(a, []).append((b, length))
+    graph.setdefault(b, []).append((a, length))
 
+# Алгоритм Дейкстры
+best = {"A": 0}
+queue = [(0, "A")]
+while queue:
+    dist, town = heapq.heappop(queue)
+    if dist > best[town]:
+        continue
+    for nxt, length in graph[town]:
+        if dist + length < best.get(nxt, 10**9):
+            best[nxt] = dist + length
+            heapq.heappush(queue, (dist + length, nxt))
 
-print(count(3, 12) * count(12, 40))
+print(best["F"])
