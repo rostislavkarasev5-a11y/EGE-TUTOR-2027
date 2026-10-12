@@ -114,8 +114,12 @@
 {% if diagnostic %}
 <p class="flash info">Диагностика · задача {{ diagnostic.tasks_done + 1 }} (не больше {{ diagnostic.max_tasks }}) ·
   без подсказок, ответ даётся один раз.</p>
+{% elif control %}
+<p class="flash info">Контрольная «я это знаю» · №{{ control.exam_item }} · задача {{ control_done + 1 }} из {{ control.total_tasks }} ·
+  без подсказок и без ИИ, ответ даётся один раз.</p>
 {% endif %}
-{% set show_side = hints or (attempt.status == AttemptStatus.IN_PROGRESS and not diagnostic) %}
+{% set strict = diagnostic or control %}
+{% set show_side = hints or (attempt.status == AttemptStatus.IN_PROGRESS and not strict) %}
 <div class="{% if show_side %}split{% endif %}">
 <div class="split-main">
 {{ statement(task) }}
@@ -136,13 +140,18 @@
     {{ csrf_field() }}
     <input type="text" name="answer" autocomplete="off" autocapitalize="off" spellcheck="false"
       placeholder="Ответ, например 0,4" required autofocus>
-    <button type="submit">{% if diagnostic %}Ответить{% else %}Проверить{% endif %}</button>
+    <button type="submit">{% if strict %}Ответить{% else %}Проверить{% endif %}</button>
   </form>
-  {% if diagnostic %}
+  {% if strict %}
   <div class="row actions">
     <form method="post" action="/attempts/{{ attempt.id }}/give-up">{{ csrf_field() }}<button class="secondary" type="submit">Не знаю</button></form>
+    {% if diagnostic %}
     <a href="/diagnostics">Прервать (продолжу потом)</a>
     <form method="post" action="/diagnostics/{{ diagnostic.session.id }}/finish">{{ csrf_field() }}<button class="link" type="submit">Завершить диагностику сейчас</button></form>
+    {% else %}
+    <a href="/control">Прервать (продолжу потом)</a>
+    <form method="post" action="/control/{{ control.id }}/finish">{{ csrf_field() }}<button class="link" type="submit">Завершить контрольную сейчас</button></form>
+    {% endif %}
   </div>
   {% if task.answer_type.value == "EXTENDED" %}
   <p class="meta">Это задание части 2: введи только итоговый ответ (несколько чисел — через «;»). Оформление решения здесь не проверяется.</p>

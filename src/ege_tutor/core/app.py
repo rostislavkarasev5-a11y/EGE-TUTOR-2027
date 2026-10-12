@@ -74,6 +74,7 @@ from ege_tutor.core.services.control import ControlService, ControlStep
 from ege_tutor.core.services.diagnostics import DiagnosticsService
 from ege_tutor.core.services.mastery import Calibration, MasteryService
 from ege_tutor.core.services.planner import PlannerService, PlannerSources
+from ege_tutor.core.services.planner import parse_time as parse_time  # для CLI и сайта
 from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
 from ege_tutor.core.services.voice import SpeechClip, VoiceService, speakable
 from ege_tutor.sandbox import make_sandbox
@@ -649,20 +650,25 @@ class TutorApp:
     def discipline(self) -> DisciplineReport:
         return self.planner.discipline()
 
-    def start_plan_item(self, item_id: int) -> Attempt:
-        """Следующая задача пункта плана (тренировка, повторение, задачи на ошибку)."""
+    def plan_item_task(self, item_id: int) -> tuple[Task, AttemptMode]:
+        """Какую задачу решать по пункту плана и в каком режиме."""
         item = self.planner.item(item_id)
         if item.kind == PlanItemKind.PRACTICE:
             assert item.exam_item is not None
-            return self.start_attempt(self.next_task(item.subject, item.exam_item).id)
+            return self.next_task(item.subject, item.exam_item), AttemptMode.PRACTICE
         if item.kind in (PlanItemKind.REVIEW, PlanItemKind.MISTAKE):
             assert item.skill_code is not None
             task = self.practice.task_for_skill(item.skill_code)
             if task is None:
                 raise AppError("для этого навыка нет проверенных задач")
             mode = AttemptMode.REVIEW if item.kind == PlanItemKind.REVIEW else AttemptMode.PRACTICE
-            return self.start_attempt(task.id, mode)
+            return task, mode
         raise AppError("этот пункт выполняется на своей странице (диагностика или контрольная)")
+
+    def start_plan_item(self, item_id: int) -> Attempt:
+        """Начать следующую задачу пункта плана (тренировка, повторение, задачи на ошибку)."""
+        task, mode = self.plan_item_task(item_id)
+        return self.start_attempt(task.id, mode)
 
     def control_unavailable(self, subject: Subject, exam_item: int) -> str | None:
         """Почему по номеру нельзя пройти контрольную (None — можно)."""

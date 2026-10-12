@@ -1,5 +1,6 @@
 """CLI на Typer. Только ввод/вывод: вся логика — в TutorApp."""
 
+import datetime as dt
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -14,7 +15,7 @@ from rich.text import Text
 
 from ege_tutor import __version__
 from ege_tutor.config import ConfigError
-from ege_tutor.core.app import AppError, TutorApp
+from ege_tutor.core.app import AppError, TutorApp, parse_time
 from ege_tutor.core.domain import (
     AI_LABEL,
     AI_PURPOSE_NAMES,
@@ -22,6 +23,7 @@ from ege_tutor.core.domain import (
     MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
     STOP_REASON_NAMES,
+    WEEKDAY_NAMES,
     AnswerKind,
     AnswerType,
     Attempt,
@@ -29,14 +31,19 @@ from ege_tutor.core.domain import (
     AttemptStatus,
     CodeRun,
     CodeVerdict,
+    DailyPlan,
     DiagnosticSession,
     DiagnosticState,
     DiagnosticStatus,
+    DisciplineColor,
+    DisciplineReport,
+    EventKind,
     Forecast,
     ImportBatchStatus,
     ImportReport,
     ItemBasis,
     MistakeCategory,
+    PlanItemKind,
     ReviewReason,
     Subject,
     Task,
@@ -210,8 +217,12 @@ def profile(
         int | None,
         typer.Option("--target-informatics", help="Цель по информатике, баллы 0–100."),
     ] = None,
+    utc_offset: Annotated[
+        int | None,
+        typer.Option("--utc-offset", help="Часовой пояс: часов от UTC (Москва — 3)."),
+    ] = None,
 ) -> None:
-    """Показать профиль или изменить имя и целевые баллы."""
+    """Показать профиль или изменить имя, целевые баллы и часовой пояс."""
     tutor = _tutor()
     targets = {}
     if target_math is not None:
@@ -220,8 +231,8 @@ def profile(
         targets[Subject.INFORMATICS] = target_informatics
     try:
         current = (
-            tutor.update_profile(display_name=name, targets=targets)
-            if name is not None or targets
+            tutor.update_profile(display_name=name, targets=targets, utc_offset_hours=utc_offset)
+            if name is not None or targets or utc_offset is not None
             else tutor.profile()
         )
     except AppError as e:
@@ -233,6 +244,7 @@ def profile(
     table.add_row("Имя", current.display_name or "—")
     for subject in Subject:
         table.add_row(f"Цель: {SUBJECT_NAMES[subject]}", str(current.targets[subject]))
+    table.add_row("Часовой пояс", f"UTC{tutor.utc_offset_hours():+d}")
     console.print(table)
 
 
@@ -1338,3 +1350,425 @@ def generate(task_id: Annotated[int, typer.Argument(help="Номер задач�
         console.print(
             f"[yellow]Ответ не проверен:[/] {escape(made.check_note)}. Сверь его: ege review {t.id}"
         )
+
+
+# ── расписание, план, дисциплина, контрольная (Phase 7, ADR-0019) ──────────
+
+WEEKDAY_HELP = "День недели: пн, вт, ср, чт, пт, сб, вс."
+DISCIPLINE_STYLES = {
+    DisciplineColor.GREEN: "green",
+    DisciplineColor.YELLOW: "yellow",
+    DisciplineColor.ORANGE: "dark_orange",
+    DisciplineColor.RED: "red",
+}
+
+
+def _weekday(text: str) -> int:
+    name = text.strip().casefold()[:2]
+    if name not in WEEKDAY_NAMES:
+        raise _fail(f"неизвестный день «{text}». {WEEKDAY_HELP}")
+    return WEEKDAY_NAMES.index(name)
+
+
+def _time(text: str) -> dt.time:
+    try:
+        return parse_time(text)
+    except AppError as e:
+        raise _fail(str(e)) from e
+
+
+def _date(text: str) -> dt.date:
+    try:
+        return dt.date.fromisoformat(text)
+    except ValueError as e:
+        raise _fail(f"дата пишется как ГГГГ-ММ-ДД, например 2026-10-12, а не «{text}»") from e
+
+
+def _local_datetime(text: str) -> dt.datetime:
+    try:
+        return dt.datetime.fromisoformat(text.strip().replace(" ", "T")).replace(tzinfo=None)
+    except ValueError as e:
+        raise _fail(f"время пишется как «ГГГГ-ММ-ДД ЧЧ:ММ», а не «{text}»") from e
+
+
+def _print_discipline(report: DisciplineReport) -> None:
+    style = DISCIPLINE_STYLES.get(report.color, "white") if report.color else "dim"
+    console.print(f"Дисциплина: [{style}]{report.color_name}[/]. {report.message}")
+
+
+def _print_plan(tutor: TutorApp, plan: DailyPlan) -> None:
+    console.print(f"[bold]План на {plan.day:%d.%m.%Y}[/] · {plan.budget_minutes} мин")
+    console.print(f"[dim]{escape(plan.explanation)}[/]")
+    if not plan.items:
+        console.print("Сегодня плана нет.")
+        return
+    table = _table()
+    for column in ("№", "Пункт", "Мин", "Сделано", "Почему"):
+        table.add_column(column)
+    for i in sorted(plan.items, key=lambda i: (not i.active, i.position, i.id)):
+        what = i.kind_name
+        if i.exam_item:
+            what += f" №{i.exam_item}"
+        what += f" · {SUBJECT_SHORT[i.subject]}"
+        if i.skill_code:
+            what += f" · {tutor.skill_title(i.skill_code)}"
+        what += "\n" + ("[bold]обязательный[/]" if i.mandatory else "[dim]дополнительный[/]")
+        done = i.status_name
+        if i.kind not in (PlanItemKind.DIAGNOSTIC, PlanItemKind.CONTROL):
+            done = f"{i.done_tasks} из {i.tasks} · {done}"
+        why = i.reason + (f"\nПричина: {i.note}" if i.note else "")
+        table.add_row(str(i.id), what, str(i.minutes), done, escape(why))
+    console.print(table)
+    console.print(
+        f"Обязательных выполнено {plan.mandatory_done_count} из {plan.mandatory_count}. "
+        "Решать пункт: ege plan-do НОМЕР"
+    )
+
+
+@app.command()
+def checkin(
+    fatigue: Annotated[int, typer.Argument(help="Усталость от 1 (бодр) до 5 (очень устал).")],
+    minutes: Annotated[
+        int | None, typer.Option("--minutes", "-m", help="Сколько минут реально есть.")
+    ] = None,
+    note: Annotated[str | None, typer.Option("--note", help="Комментарий.")] = None,
+) -> None:
+    """Чек-ин на сегодня: усталость и свободное время. План учтёт его после ege plan --rebuild."""
+    tutor = _tutor()
+    try:
+        tutor.save_checkin(fatigue, minutes, note)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    budget = tutor.day_budget()
+    console.print(f"Чек-ин сохранён. Время на сегодня: {budget.minutes} мин.")
+    console.print("Перестроить план: ege plan --rebuild")
+
+
+@app.command()
+def plan(
+    rebuild: Annotated[
+        bool, typer.Option("--rebuild", help="Перестроить план на сегодня.")
+    ] = False,
+    day: Annotated[str | None, typer.Option("--day", help="День ГГГГ-ММ-ДД.")] = None,
+) -> None:
+    """План на сегодня (или другой день): пункты, почему они в плане, что сделано."""
+    tutor = _tutor()
+    try:
+        current = tutor.rebuild_plan() if rebuild else tutor.daily_plan(_date(day) if day else None)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    if current is None:
+        console.print("Плана на этот день нет.")
+        return
+    _print_plan(tutor, current)
+    _print_discipline(tutor.discipline())
+
+
+@app.command(name="plan-do")
+def plan_do(item_id: Annotated[int, typer.Argument(help="Номер пункта плана.")]) -> None:
+    """Решать задачи пункта плана, пока пункт не выполнен."""
+    tutor = _tutor()
+    while True:
+        item = next((i for i in tutor.daily_plan().items if i.id == item_id), None)
+        if item is None:
+            raise _fail(f"в плане на сегодня нет пункта №{item_id}")
+        if not item.open:
+            console.print(f"Пункт №{item_id}: {item.status_name}.")
+            return
+        if item.kind == PlanItemKind.DIAGNOSTIC:
+            console.print(f"Это диагностика: ege diagnose {item.subject.value.lower()}")
+            return
+        if item.kind == PlanItemKind.CONTROL:
+            console.print(
+                f"Это контрольная: ege control {item.subject.value.lower()} {item.exam_item}"
+            )
+            return
+        try:
+            task_, mode = tutor.plan_item_task(item_id)
+        except AppError as e:
+            raise _fail(str(e)) from e
+        console.print(f"[dim]Пункт №{item_id}: задача {item.done_tasks + 1} из {item.tasks}[/]")
+        outcome, _ = _solve_one(tutor, task_, mode)
+        if outcome == "exit":
+            return
+
+
+@app.command(name="plan-add")
+def plan_add(
+    subject: Annotated[str, typer.Argument(help=SUBJECT_HELP)],
+    item: Annotated[int, typer.Argument(help="Номер задания ЕГЭ.")],
+    count: Annotated[int, typer.Option("--tasks", "-n", help="Сколько задач.")] = 1,
+) -> None:
+    """Добавить свой пункт (правило 80/20: не больше 20% времени плана)."""
+    tutor = _tutor()
+    parsed = _subject(subject)
+    assert parsed is not None
+    try:
+        added = tutor.add_plan_item(parsed, item, count)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(f"Добавлен пункт №{added.id}: №{item}, задач {count}, {added.minutes} мин.")
+
+
+@app.command(name="plan-move")
+def plan_move(
+    item_id: Annotated[int, typer.Argument(help="Номер пункта плана.")],
+    day: Annotated[str, typer.Argument(help="На какой день, ГГГГ-ММ-ДД.")],
+    note: Annotated[str | None, typer.Option("--note", help="Причина переноса.")] = None,
+) -> None:
+    """Перенести пункт на другой день (обязательный — только с причиной)."""
+    tutor = _tutor()
+    try:
+        moved = tutor.move_plan_item(item_id, _date(day), note)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(f"Перенесено на {moved.day:%d.%m.%Y}.")
+
+
+@app.command(name="plan-remove")
+def plan_remove(item_id: Annotated[int, typer.Argument(help="Номер пункта плана.")]) -> None:
+    """Убрать дополнительный пункт плана."""
+    tutor = _tutor()
+    try:
+        tutor.remove_plan_item(item_id)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print("Пункт убран.")
+
+
+@app.command()
+def excuse(
+    note: Annotated[str, typer.Argument(help="Причина: болезнь, соревнование, поездка…")],
+    item_id: Annotated[
+        int | None, typer.Option("--item", help="Только этот пункт (иначе — весь день).")
+    ] = None,
+) -> None:
+    """Объективная причина: день не портит дисциплину, обязательное переносится."""
+    tutor = _tutor()
+    try:
+        if item_id is None:
+            count = tutor.excuse_day(note)
+            console.print(f"Отмечено пунктов: {count}. Обязательные перенесены.")
+        else:
+            carried = tutor.excuse_plan_item(item_id, note)
+            where = f" Перенесён на {carried.day:%d.%m.%Y}." if carried else ""
+            console.print("Причина отмечена." + where)
+    except AppError as e:
+        raise _fail(str(e)) from e
+
+
+@app.command()
+def calendar() -> None:
+    """Расписание: окна для учёбы по дням недели и события на 30 дней."""
+    tutor = _tutor()
+    windows = tutor.calendar_windows()
+    if windows:
+        table = _table(title="Окна для учёбы")
+        for column in ("№", "День", "Время", "Мин"):
+            table.add_column(column)
+        for w in windows:
+            table.add_row(
+                str(w.id), w.weekday_name, f"{w.start:%H:%M}–{w.end:%H:%M}", str(w.minutes)
+            )
+        console.print(table)
+    else:
+        console.print("Окон нет: план берёт 60 мин в день. Добавить: ege window-add пн 16:30 19:00")
+    events = tutor.calendar_events()
+    if events:
+        table = _table(title="События")
+        for column in ("№", "Когда", "Что", "Мешает учёбе"):
+            table.add_column(column)
+        for e in events:
+            table.add_row(
+                str(e.id),
+                f"{e.starts_at:%d.%m %H:%M}–{e.ends_at:%d.%m %H:%M}",
+                escape(f"{e.kind_name} · {e.title}"),
+                "да" if e.blocks_study else "нет",
+            )
+        console.print(table)
+    console.print(
+        f"[dim]Часовой пояс: UTC{tutor.utc_offset_hours():+d} (ege profile --utc-offset)[/]"
+    )
+
+
+@app.command(name="window-add")
+def window_add(
+    weekday: Annotated[str, typer.Argument(help=WEEKDAY_HELP)],
+    start: Annotated[str, typer.Argument(help="С какого времени, ЧЧ:ММ.")],
+    end: Annotated[str, typer.Argument(help="До какого времени, ЧЧ:ММ.")],
+) -> None:
+    """Добавить окно для учёбы в шаблон недели."""
+    tutor = _tutor()
+    try:
+        w = tutor.add_calendar_window(_weekday(weekday), _time(start), _time(end))
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(f"Окно №{w.id}: {w.weekday_name} {w.start:%H:%M}–{w.end:%H:%M}.")
+
+
+@app.command(name="window-remove")
+def window_remove(window_id: Annotated[int, typer.Argument(help="Номер окна.")]) -> None:
+    """Удалить окно из шаблона недели."""
+    tutor = _tutor()
+    try:
+        tutor.delete_calendar_window(window_id)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print("Окно удалено.")
+
+
+@app.command(name="event-add")
+def event_add(
+    kind: Annotated[
+        str,
+        typer.Argument(help="Тип: SCHOOL, TRAINING, COMPETITION, TRIP, REST, ILLNESS, OTHER."),
+    ],
+    title: Annotated[str, typer.Argument(help="Название.")],
+    start: Annotated[str, typer.Argument(help="Начало, «ГГГГ-ММ-ДД ЧЧ:ММ».")],
+    end: Annotated[str, typer.Argument(help="Конец, «ГГГГ-ММ-ДД ЧЧ:ММ».")],
+    no_block: Annotated[bool, typer.Option("--no-block", help="Событие не мешает учёбе.")] = False,
+) -> None:
+    """Добавить событие (школа, тренировка, соревнование…)."""
+    tutor = _tutor()
+    try:
+        event_kind = EventKind(kind.upper())
+    except ValueError as e:
+        raise _fail(f"неизвестный тип события «{kind}»") from e
+    try:
+        e = tutor.add_calendar_event(
+            event_kind, title, _local_datetime(start), _local_datetime(end), not no_block
+        )
+    except AppError as err:
+        raise _fail(str(err)) from err
+    console.print(f"Событие №{e.id} добавлено.")
+
+
+@app.command(name="event-remove")
+def event_remove(event_id: Annotated[int, typer.Argument(help="Номер события.")]) -> None:
+    """Удалить событие."""
+    tutor = _tutor()
+    try:
+        tutor.delete_calendar_event(event_id)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print("Событие удалено.")
+
+
+@app.command()
+def discipline() -> None:
+    """Дисциплина за 7 дней: доля выполненного обязательного плана и цвет."""
+    tutor = _tutor()
+    report = tutor.discipline()
+    _print_discipline(report)
+    if report.days:
+        table = _table()
+        for column in ("День", "Обязательных", "Выполнено", "Причина"):
+            table.add_column(column)
+        for d in report.days:
+            table.add_row(
+                f"{d.day:%d.%m}",
+                f"{d.due_items} ({d.due_minutes} мин)",
+                f"{d.done_items} ({d.done_minutes:g} мин)",
+                "да" if d.excused else "",
+            )
+        console.print(table)
+
+
+@app.command()
+def control(
+    subject: Annotated[str, typer.Argument(help=SUBJECT_HELP)],
+    item: Annotated[int, typer.Argument(help="Номер задания ЕГЭ.")],
+) -> None:
+    """Контрольная «я это знаю»: без подсказок и без ИИ. Сданный номер уходит из тренировок."""
+    tutor = _tutor()
+    parsed = _subject(subject)
+    assert parsed is not None
+    try:
+        session = tutor.start_control(parsed, item)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    console.print(
+        "[dim]Подсказок и ИИ нет. Ответ даётся один раз. Команды: сдаюсь — не знаю, "
+        "выход — прервать (продолжишь той же командой), закончить — завершить сейчас.[/]"
+    )
+    while True:
+        step = tutor.control_step(session.id)
+        if step.attempt is None or step.task is None:
+            _print_control(tutor, step.session.id)
+            return
+        _show_task_header(tutor, step.task, step.attempt)
+        while True:
+            try:
+                text = typer.prompt("Ответ", prompt_suffix=": ").strip()
+            except (typer.Abort, EOFError, KeyboardInterrupt):
+                console.print(f"\nКонтрольная прервана. Продолжить: ege control {subject} {item}")
+                return
+            command = text.casefold()
+            if command in EXIT_WORDS:
+                console.print(f"Контрольная прервана. Продолжить: ege control {subject} {item}")
+                return
+            if command in FINISH_WORDS:
+                tutor.finish_control(session.id)
+                _print_control(tutor, session.id)
+                return
+            if command in GIVE_UP_WORDS:
+                tutor.give_up(step.attempt.id)
+                break
+            if command in HINT_WORDS or command in AI_HINT_WORDS:
+                console.print("[yellow]В контрольной подсказок нет.[/]")
+                continue
+            try:
+                tutor.submit_answer(step.attempt.id, text)
+            except AppError as e:
+                console.print(f"[yellow]{e}[/]")
+                continue
+            break
+        console.print("[dim]Ответ записан.[/]")
+
+
+def _print_control(tutor: TutorApp, session_id: int) -> None:
+    session = tutor.control_session(session_id)
+    console.print(
+        f"[bold]Контрольная №{session.exam_item}: {session.status_name}[/] · "
+        f"засчитано {session.passed_tasks} из {session.total_tasks}"
+    )
+    table = _table()
+    for column in ("Задача", "Верно", "Сам", "Время"):
+        table.add_column(column)
+    for r in tutor.control_results(session_id):
+        if r.attempt_id is None:
+            table.add_row(str(r.task_id), "—", "—", "не решалась")
+            continue
+        time_text = _minutes(r.seconds) + ("" if r.in_time else " [red](дольше нормы)[/]")
+        table.add_row(str(r.task_id), _yes_no(r.correct), _yes_no(r.independent), time_text)
+    console.print(table)
+
+
+@app.command()
+def controls(
+    session_id: Annotated[int | None, typer.Argument(help="Номер контрольной.")] = None,
+) -> None:
+    """Прошлые контрольные «я это знаю»."""
+    tutor = _tutor()
+    if session_id is not None:
+        try:
+            _print_control(tutor, session_id)
+        except AppError as e:
+            raise _fail(str(e)) from e
+        return
+    sessions = tutor.control_sessions()
+    if not sessions:
+        console.print("Контрольных ещё не было. Начать: ege control math 1")
+        return
+    table = _table(title="Контрольные")
+    for column in ("№", "Предмет", "Задание", "Начата", "Итог"):
+        table.add_column(column)
+    for c in sessions:
+        table.add_row(
+            str(c.id),
+            SUBJECT_NAMES[c.subject],
+            str(c.exam_item),
+            f"{c.started_at:%d.%m.%Y %H:%M}",
+            f"{c.status_name} · {c.passed_tasks} из {c.total_tasks}",
+        )
+    console.print(table)

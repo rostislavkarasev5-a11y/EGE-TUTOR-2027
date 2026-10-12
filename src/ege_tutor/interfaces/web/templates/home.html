@@ -17,8 +17,21 @@
   <a href="/review">проверить</a>.</p>
 {% endif %}
 
+<section class="card hero stack">
+  <h2>План на сегодня</h2>
+  {% if plan.items %}
+  {% set open_items = plan.items|selectattr("open")|list %}
+  <p>Обязательных выполнено {{ plan.mandatory_done_count }} из {{ plan.mandatory_count }} · время {{ plan.budget_minutes }} мин.
+    {% if open_items %}Следующий пункт: {{ open_items[0].kind_name }}{% if open_items[0].exam_item %} №{{ open_items[0].exam_item }}{% endif %} ({{ SUBJECT_NAMES[open_items[0].subject] }}).{% else %}Всё на сегодня сделано.{% endif %}</p>
+  {% else %}
+  <p>Сегодня плана нет{% if plan.budget_minutes == 0 %}: выходной{% endif %}.</p>
+  {% endif %}
+  <p><a href="/plan">Открыть план</a> · дисциплина: <strong class="disc-text {% if discipline.color %}disc-{{ discipline.color.value|lower }}{% endif %}">{{ discipline.color_name }}</strong>
+    {% if not checkin %}· <a href="/plan">чек-ин ещё не сделан</a>{% endif %}</p>
+</section>
+
 <div class="grid-2">
-  <section class="card hero stack">
+  <section class="card stack">
     <h2>Решать задачи</h2>
     <form method="post" action="/solve" class="row">
       {{ csrf_field() }}

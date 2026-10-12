@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field with context %}
+{% block content %}
+<h1>Расписание</h1>
+<p class="meta">Расписание — твои личные данные: хранится только в базе на сервере, в GitHub не попадает.
+  Время — твоё местное (часовой пояс — в <a href="/profile">профиле</a>).</p>
+
+<section class="card">
+  <h2>Окна для учёбы (шаблон недели)</h2>
+  {% if windows %}
+  <table>
+    <tr><th>День</th><th>Время</th><th>Минут</th><th></th></tr>
+    {% for w in windows %}
+    <tr>
+      <td>{{ w.weekday_name }}</td>
+      <td>{{ w.start.strftime("%H:%M") }}–{{ w.end.strftime("%H:%M") }}</td>
+      <td>{{ w.minutes }}</td>
+      <td><form method="post" action="/calendar/windows/{{ w.id }}/delete">{{ csrf_field() }}<button type="submit" class="link">Удалить</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p>Шаблон пуст: пока план берёт 60 минут в день. Добавь окна, когда ты обычно можешь учиться.</p>
+  {% endif %}
+  <form method="post" action="/calendar/windows" class="row actions">
+    {{ csrf_field() }}
+    <select name="weekday" aria-label="День недели">
+      {% for name in WEEKDAY_NAMES %}<option value="{{ loop.index0 }}">{{ name }}</option>{% endfor %}
+    </select>
+    <label>с <input type="time" name="start" required></label>
+    <label>до <input type="time" name="end" required></label>
+    <button type="submit" class="secondary">Добавить окно</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>События на 30 дней</h2>
+  {% if events %}
+  <table>
+    <tr><th>Когда</th><th>Что</th><th>Мешает учёбе</th><th></th></tr>
+    {% for e in events %}
+    <tr>
+      <td>{{ e.starts_at.strftime("%d.%m %H:%M") }}–{{ e.ends_at.strftime("%d.%m %H:%M") }}</td>
+      <td>{{ e.kind_name }} · {{ e.title }}</td>
+      <td>{{ "да" if e.blocks_study else "нет" }}</td>
+      <td><form method="post" action="/calendar/events/{{ e.id }}/delete">{{ csrf_field() }}<button type="submit" class="link">Удалить</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="meta">Событий нет.</p>
+  {% endif %}
+  <form method="post" action="/calendar/events" class="stack actions">
+    {{ csrf_field() }}
+    <div class="row">
+      <select name="kind" aria-label="Тип события">
+        {% for k in EventKind %}<option value="{{ k.value }}">{{ EVENT_KIND_NAMES[k] }}</option>{% endfor %}
+      </select>
+      <input type="text" name="title" maxlength="200" placeholder="Название, например: тренировка" aria-label="Название">
+    </div>
+    <div class="row">
+      <label>Начало <input type="datetime-local" name="starts_at" required></label>
+      <label>Конец <input type="datetime-local" name="ends_at" required></label>
+      <label><input type="checkbox" name="blocks_study" checked> мешает учёбе</label>
+    </div>
+    <button type="submit" class="secondary">Добавить событие</button>
+  </form>
+</section>
+{% endblock %}

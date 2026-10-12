@@ -20,22 +20,29 @@ from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 
 from ege_tutor import __version__
-from ege_tutor.core.app import AppError, TutorApp
+from ege_tutor.core.app import AppError, TutorApp, parse_time
 from ege_tutor.core.domain import (
     AI_LABEL,
     AI_PURPOSE_NAMES,
     CODE_VERDICT_LABELS,
+    EVENT_KIND_NAMES,
     ITEM_BASIS_NAMES,
     MISTAKE_CATEGORY_NAMES,
     SOURCE_LABELS,
     STOP_REASON_NAMES,
+    WEEKDAY_NAMES,
     AnswerType,
     AttemptStatus,
     CodeVerdict,
+    ControlStatus,
     DiagnosticStatus,
+    DisciplineColor,
+    EventKind,
     ImportBatchStatus,
     ItemBasis,
     MistakeCategory,
+    PlanItemKind,
+    PlanItemStatus,
     ReviewReason,
     Subject,
     Task,
@@ -166,6 +173,21 @@ def _parse_subject(text: str | None) -> Subject | None:
         return None
 
 
+def _parse_date(text: str | None) -> dt.date | None:
+    try:
+        return dt.date.fromisoformat(text) if text else None
+    except ValueError:
+        return None
+
+
+def _parse_local(text: str | None) -> dt.datetime | None:
+    """Поле datetime-local («2026-10-07T16:30») → местное время без часового пояса."""
+    try:
+        return dt.datetime.fromisoformat(text).replace(tzinfo=None) if text else None
+    except ValueError:
+        return None
+
+
 def _parse_int(text: str | None) -> int | None:
     try:
         return int(text) if text not in (None, "") else None
@@ -223,6 +245,13 @@ def create_app(
         STOP_REASON_NAMES=STOP_REASON_NAMES,
         ItemBasis=ItemBasis,
         DiagnosticStatus=DiagnosticStatus,
+        PlanItemKind=PlanItemKind,
+        PlanItemStatus=PlanItemStatus,
+        ControlStatus=ControlStatus,
+        DisciplineColor=DisciplineColor,
+        EventKind=EventKind,
+        EVENT_KIND_NAMES=EVENT_KIND_NAMES,
+        WEEKDAY_NAMES=WEEKDAY_NAMES,
         AI_LABEL=AI_LABEL,
         AI_PURPOSE_NAMES=AI_PURPOSE_NAMES,
         skill_title=tutor.skill_title,
@@ -378,6 +407,9 @@ def create_app(
             profile=core.profile(),
             has_unverified=core.next_unverified_task() is not None,
             queue=core.review_queue(),
+            plan=core.daily_plan(),
+            checkin=core.checkin(),
+            discipline=core.discipline(),
         )
 
     # ── прогресс, ошибки, повторение (Phase 4) ──
@@ -520,6 +552,281 @@ def create_app(
             flash(request, str(e), "error")
         return redirect(f"/diagnostics/{session_id}")
 
+    # ── план, расписание, дисциплина, контрольная (Phase 7) ──
+
+    @app.get("/plan", response_class=HTMLResponse)
+    def plan_page(request: Request):
+        require_login(request)
+        plan = core.daily_plan()
+        used, limit = core.plan_change_limit(plan)
+        today = core.today()
+        return render(
+            request,
+            "plan.html",
+            plan=plan,
+            items=sorted(plan.items, key=lambda i: (not i.active, i.position, i.id)),
+            budget=core.day_budget(),
+            checkin=core.checkin(),
+            discipline=core.discipline(),
+            change_used=used,
+            change_limit=limit,
+            tomorrow=(today + dt.timedelta(days=1)).isoformat(),
+            today=today,
+        )
+
+    async def plan_action(request: Request, action, success: str | None = None):
+        """Общая обёртка для кнопок плана: CSRF, ошибка — сообщением, возврат на /plan."""
+        require_login(request)
+        await check_csrf(request)
+        try:
+            action()
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/plan")
+        if success:
+            flash(request, success, "success")
+        return redirect("/plan")
+
+    @app.post("/checkin")
+    async def save_checkin(
+        request: Request,
+        fatigue: Annotated[str, Form()] = "",
+        available: Annotated[str, Form()] = "",
+        note: Annotated[str, Form()] = "",
+        back: Annotated[str, Form()] = "/plan",
+    ):
+        require_login(request)
+        await check_csrf(request)
+        level = _parse_int(fatigue)
+        minutes_free = _parse_int(available)
+        if level is None or (available and minutes_free is None):
+            flash(request, "Усталость — от 1 до 5, время — целое число минут.", "error")
+            return redirect(_safe_next(back))
+        try:
+            core.save_checkin(level, minutes_free, note)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(_safe_next(back))
+        flash(request, "Чек-ин сохранён. Чтобы план учёл его, нажми «Перестроить».", "success")
+        return redirect(_safe_next(back))
+
+    @app.post("/plan/rebuild")
+    async def rebuild_plan(request: Request):
+        return await plan_action(request, core.rebuild_plan, "План перестроен.")
+
+    @app.post("/plan/add")
+    async def add_plan_item(
+        request: Request,
+        subject: Annotated[str, Form()] = "",
+        item: Annotated[str, Form()] = "",
+        tasks: Annotated[str, Form()] = "1",
+    ):
+        chosen = _parse_subject(subject)
+        number = _parse_int(item)
+        count = _parse_int(tasks) or 1
+
+        def add():
+            if chosen is None or number is None:
+                raise AppError("выбери предмет и номер задания")
+            core.add_plan_item(chosen, number, count)
+
+        return await plan_action(request, add, "Пункт добавлен.")
+
+    @app.post("/plan/items/{item_id}/start")
+    async def start_plan_item(request: Request, item_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            attempt = core.start_plan_item(item_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/plan")
+        return redirect(f"/attempts/{attempt.id}")
+
+    @app.post("/plan/items/{item_id}/up")
+    async def plan_item_up(request: Request, item_id: int):
+        return await plan_action(request, lambda: core.reorder_plan_item(item_id, True))
+
+    @app.post("/plan/items/{item_id}/down")
+    async def plan_item_down(request: Request, item_id: int):
+        return await plan_action(request, lambda: core.reorder_plan_item(item_id, False))
+
+    @app.post("/plan/items/{item_id}/move")
+    async def move_plan_item(
+        request: Request,
+        item_id: int,
+        day: Annotated[str, Form()] = "",
+        note: Annotated[str, Form()] = "",
+    ):
+        target = _parse_date(day)
+
+        def move():
+            if target is None:
+                raise AppError("выбери день, на который перенести")
+            core.move_plan_item(item_id, target, note)
+
+        return await plan_action(request, move, "Пункт перенесён.")
+
+    @app.post("/plan/items/{item_id}/remove")
+    async def remove_plan_item(request: Request, item_id: int):
+        return await plan_action(request, lambda: core.remove_plan_item(item_id), "Пункт убран.")
+
+    @app.post("/plan/items/{item_id}/excuse")
+    async def excuse_plan_item(request: Request, item_id: int, note: Annotated[str, Form()] = ""):
+        return await plan_action(
+            request,
+            lambda: core.excuse_plan_item(item_id, note),
+            "Отмечена объективная причина. Обязательный пункт перенесён на ближайший учебный день.",
+        )
+
+    @app.post("/plan/excuse-day")
+    async def excuse_day(request: Request, note: Annotated[str, Form()] = ""):
+        return await plan_action(
+            request,
+            lambda: core.excuse_day(note),
+            "День отмечен объективной причиной: обязательные пункты перенесены.",
+        )
+
+    @app.get("/calendar", response_class=HTMLResponse)
+    def calendar_page(request: Request):
+        require_login(request)
+        return render(
+            request,
+            "calendar.html",
+            windows=core.calendar_windows(),
+            events=core.calendar_events(),
+            today=core.today(),
+        )
+
+    async def calendar_action(request: Request, action, success: str):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            action()
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/calendar")
+        flash(request, success, "success")
+        return redirect("/calendar")
+
+    @app.post("/calendar/windows")
+    async def add_window(
+        request: Request,
+        weekday: Annotated[str, Form()] = "",
+        start: Annotated[str, Form()] = "",
+        end: Annotated[str, Form()] = "",
+    ):
+        day = _parse_int(weekday)
+
+        def add():
+            if day is None:
+                raise AppError("выбери день недели")
+            core.add_calendar_window(day, parse_time(start), parse_time(end))
+
+        return await calendar_action(request, add, "Окно для учёбы добавлено.")
+
+    @app.post("/calendar/windows/{window_id}/delete")
+    async def delete_window(request: Request, window_id: int):
+        return await calendar_action(
+            request, lambda: core.delete_calendar_window(window_id), "Окно удалено."
+        )
+
+    @app.post("/calendar/events")
+    async def add_event(
+        request: Request,
+        kind: Annotated[str, Form()] = "",
+        title: Annotated[str, Form()] = "",
+        starts_at: Annotated[str, Form()] = "",
+        ends_at: Annotated[str, Form()] = "",
+        blocks_study: Annotated[str, Form()] = "",
+    ):
+        begin, finish = _parse_local(starts_at), _parse_local(ends_at)
+
+        def add():
+            try:
+                event_kind = EventKind(kind)
+            except ValueError:
+                raise AppError("выбери тип события") from None
+            if begin is None or finish is None:
+                raise AppError("укажи начало и конец события")
+            core.add_calendar_event(event_kind, title, begin, finish, blocks_study == "on")
+
+        return await calendar_action(request, add, "Событие добавлено.")
+
+    @app.post("/calendar/events/{event_id}/delete")
+    async def delete_event(request: Request, event_id: int):
+        return await calendar_action(
+            request, lambda: core.delete_calendar_event(event_id), "Событие удалено."
+        )
+
+    @app.get("/control", response_class=HTMLResponse)
+    def control_page(request: Request):
+        require_login(request)
+        return render(
+            request,
+            "control.html",
+            sessions=core.control_sessions(limit=30),
+            config=tutor.settings.planner.control,
+        )
+
+    @app.post("/control/start")
+    async def start_control(
+        request: Request,
+        subject: Annotated[str, Form()] = "",
+        item: Annotated[str, Form()] = "",
+    ):
+        require_login(request)
+        await check_csrf(request)
+        chosen = _parse_subject(subject)
+        number = _parse_int(item)
+        if chosen is None or number is None:
+            flash(request, "выбери предмет и номер задания", "error")
+            return redirect("/control")
+        try:
+            session = core.start_control(chosen, number)
+            return after_control_answer(session.id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/control")
+
+    @app.get("/control/{session_id}", response_class=HTMLResponse)
+    def control_result_page(request: Request, session_id: int):
+        require_login(request)
+        try:
+            session = core.control_session(session_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect("/control")
+        results = core.control_results(session_id)
+        return render(
+            request,
+            "control_result.html",
+            session=session,
+            results=results,
+            tasks={r.task_id: core.task(r.task_id) for r in results},
+            slow_factor=tutor.settings.planner.control.slow_factor,
+        )
+
+    @app.post("/control/{session_id}/continue")
+    async def continue_control(request: Request, session_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            return after_control_answer(session_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(f"/control/{session_id}")
+
+    @app.post("/control/{session_id}/finish")
+    async def finish_control(request: Request, session_id: int):
+        require_login(request)
+        await check_csrf(request)
+        try:
+            core.finish_control(session_id)
+        except AppError as e:
+            flash(request, str(e), "error")
+        return redirect(f"/control/{session_id}")
+
     # ── задачи ──
 
     @app.get("/tasks", response_class=HTMLResponse)
@@ -624,6 +931,10 @@ def create_app(
         if session_id is not None and attempt.status != AttemptStatus.IN_PROGRESS:
             # ответы диагностики не показываются по одному: итог — на странице диагностики
             return redirect(f"/diagnostics/{session_id}")
+        control_id = core.control_session_of_attempt(attempt_id)
+        if control_id is not None and attempt.status != AttemptStatus.IN_PROGRESS:
+            return redirect(f"/control/{control_id}")
+        control = core.control_session(control_id) if control_id is not None else None
         notes = request.session.get("result_notes", {})
         subject, item = request.session.get("solve_filter", ["", ""])
         runs = []
@@ -632,7 +943,7 @@ def create_app(
             runs = core.code_runs(task.id, attempt_id, limit=5)
         mistakes = core.attempt_mistakes(attempt_id)
         ai = core.ai_status()
-        ai_allowed = session_id is None and core.ai_allowed_for(attempt_id)
+        ai_allowed = session_id is None and control is None and core.ai_allowed_for(attempt_id)
         chat = core.chat_messages(attempt_id) if ai_allowed else []
         speak = request.session.pop("speak_next", None)
         return render(
@@ -661,7 +972,20 @@ def create_app(
             filter_subject=subject,
             filter_item=item,
             diagnostic=core.diagnostic_state(session_id) if session_id is not None else None,
+            control=control,
+            control_done=(
+                sum(1 for r in core.control_results(control.id) if r.attempt_id is not None)
+                if control is not None
+                else 0
+            ),
         )
+
+    def after_control_answer(session_id: int):
+        """После ответа в контрольной — следующая задача или итог."""
+        step = core.control_step(session_id)
+        if step.attempt is not None:
+            return redirect(f"/attempts/{step.attempt.id}")
+        return redirect(f"/control/{session_id}")
 
     def after_diagnostic_answer(session_id: int):
         """После ответа в диагностике — сразу следующая задача или итог."""
@@ -682,6 +1006,9 @@ def create_app(
         session_id = core.diagnostic_session_of_attempt(attempt_id)
         if session_id is not None:
             return after_diagnostic_answer(session_id)
+        control_id = core.control_session_of_attempt(attempt_id)
+        if control_id is not None:
+            return after_control_answer(control_id)
         notes = request.session.get("result_notes", {})
         notes = dict(list(notes.items())[-9:])  # храним пояснения к последним попыткам
         notes[str(attempt_id)] = result.check.explanation
@@ -877,6 +1204,9 @@ def create_app(
         session_id = core.diagnostic_session_of_attempt(attempt_id)
         if session_id is not None:
             return after_diagnostic_answer(session_id)
+        control_id = core.control_session_of_attempt(attempt_id)
+        if control_id is not None:
+            return after_control_answer(control_id)
         return redirect(f"/attempts/{attempt_id}")
 
     @app.post("/attempts/{attempt_id}/similar")
@@ -885,6 +1215,9 @@ def create_app(
         await check_csrf(request)
         if core.diagnostic_session_of_attempt(attempt_id) is not None:
             flash(request, "в диагностике похожих задач и подсказок нет", "warning")
+            return redirect(f"/attempts/{attempt_id}")
+        if core.control_session_of_attempt(attempt_id) is not None:
+            flash(request, "в контрольной похожих задач и подсказок нет", "warning")
             return redirect(f"/attempts/{attempt_id}")
         try:
             attempt = core.attempt(attempt_id)
@@ -953,7 +1286,9 @@ def create_app(
     @app.get("/profile", response_class=HTMLResponse)
     def profile_page(request: Request):
         require_login(request)
-        return render(request, "profile.html", profile=core.profile())
+        return render(
+            request, "profile.html", profile=core.profile(), utc_offset=core.utc_offset_hours()
+        )
 
     @app.post("/profile")
     async def profile_save(
@@ -961,6 +1296,7 @@ def create_app(
         display_name: Annotated[str, Form()] = "",
         target_math: Annotated[str, Form()] = "",
         target_informatics: Annotated[str, Form()] = "",
+        utc_offset: Annotated[str, Form()] = "",
     ):
         require_login(request)
         await check_csrf(request)
@@ -975,8 +1311,12 @@ def create_app(
                 return redirect("/profile")
             if value is not None:
                 targets[subject] = value
+        offset = _parse_int(utc_offset)
+        if utc_offset and offset is None:
+            flash(request, "Часовой пояс — целое число часов, например 3 для Москвы.", "error")
+            return redirect("/profile")
         try:
-            core.update_profile(display_name=display_name, targets=targets)
+            core.update_profile(display_name=display_name, targets=targets, utc_offset_hours=offset)
         except AppError as e:
             flash(request, str(e), "error")
             return redirect("/profile")

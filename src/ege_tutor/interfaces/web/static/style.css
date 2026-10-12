@@ -435,6 +435,22 @@ textarea.solution {
 }
 
 /* ── телефон и узкие окна ──────────────────────────────────────────── */
+/* ── план и дисциплина (Phase 7) ── */
+.discipline { border-left: 4px solid var(--line-2); }
+.discipline.disc-green { border-left-color: var(--ok); }
+.discipline.disc-yellow { border-left-color: var(--warn); }
+.discipline.disc-orange { border-left-color: #ffb36b; }
+.discipline.disc-red { border-left-color: var(--bad); }
+.disc-text.disc-green { color: var(--ok); }
+.disc-text.disc-yellow { color: var(--warn); }
+.disc-text.disc-orange { color: #ffb36b; }
+.disc-text.disc-red { color: var(--bad); }
+table.plan td { vertical-align: top; }
+table.plan tr.muted td { opacity: 0.55; }
+table.plan details { margin-top: 8px; }
+table.plan details summary { cursor: pointer; color: var(--muted); }
+table.plan details form { margin-top: 8px; }
+
 @media (max-width: 1000px) {
   .split { grid-template-columns: minmax(0, 1fr); }
 }

@@ -529,6 +529,9 @@ class PlannerService:
         if day > today + dt.timedelta(days=MAX_PLAN_DAYS_AHEAD):
             raise AppError("план строится не дальше чем на 60 дней вперёд")
         plan = self._repo.get_plan(day)
+        if plan is not None and day == today and build and not plan.items and plan.budget_minutes:
+            # План был пуст (например, задач ещё не было) — пробуем собрать заново.
+            plan = None
         if plan is None:
             if not build or day < today:
                 return None

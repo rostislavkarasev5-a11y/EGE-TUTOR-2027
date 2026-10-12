@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field, subject_select with context %}
+{% block content %}
+<h1>План на {{ plan.day.strftime("%d.%m.%Y") }}</h1>
+
+{% include "_discipline.html" %}
+
+<section class="card">
+  <h2>Время на сегодня: {{ plan.budget_minutes }} мин</h2>
+  <p class="meta">{{ plan.explanation }}</p>
+  {% if budget.minutes != plan.budget_minutes %}
+  <p class="flash warning">Сейчас по расписанию и чек-ину выходит {{ budget.minutes }} мин. Нажми «Перестроить», чтобы план это учёл.</p>
+  {% endif %}
+  <form method="post" action="/plan/rebuild" class="actions">
+    {{ csrf_field() }}
+    <button type="submit" class="secondary">Перестроить</button>
+  </form>
+  <p class="meta">Перестройка сохраняет начатые, перенесённые и добавленные тобой пункты.
+    Шаблон недели и события — в разделе <a href="/calendar">«Расписание»</a>.</p>
+</section>
+
+{% include "_checkin.html" %}
+
+<section class="card">
+  <h2>Пункты плана</h2>
+  {% if not plan.items %}
+  <p>Сегодня плана нет{% if plan.budget_minutes == 0 %}: выходной{% endif %}.</p>
+  {% else %}
+  <p class="meta">Обязательные: выполнено {{ plan.mandatory_done_count }} из {{ plan.mandatory_count }}.
+    Выполнение считается по решённым задачам, отмечать вручную не нужно.</p>
+  <div class="scroll">
+  <table class="plan">
+    <tr><th>Пункт</th><th>Сделано</th><th>Почему</th><th>Действия</th></tr>
+    {% for i in items %}
+    <tr class="{% if not i.active %}muted{% endif %}">
+      <td><strong>{{ i.kind_name }}</strong>{% if i.exam_item %} · №{{ i.exam_item }}{% endif %}
+        · {{ SUBJECT_NAMES[i.subject] }}{% if i.skill_code %} · {{ skill_title(i.skill_code) }}{% endif %}
+        <br><span class="meta">{{ i.minutes }} мин · {% if i.mandatory %}обязательный{% else %}дополнительный{% endif %}{% if i.added_by_user %} · добавил ты{% endif %}</span></td>
+      <td>{% if i.kind not in (PlanItemKind.DIAGNOSTIC, PlanItemKind.CONTROL) %}{{ i.done_tasks }} из {{ i.tasks }} · {% endif %}{{ i.status_name }}</td>
+      <td class="meta">{{ i.reason }}{% if i.carried_from %} (перенесён с {{ i.carried_from.strftime("%d.%m") }}){% endif %}{% if i.note %}<br>Причина: {{ i.note }}{% endif %}</td>
+      <td>
+        {% if i.open %}
+        <div class="row compact">
+          {% if i.kind == PlanItemKind.DIAGNOSTIC %}
+          <a href="/diagnostics">Решать</a>
+          {% elif i.kind == PlanItemKind.CONTROL %}
+          <a href="/control">Решать</a>
+          {% else %}
+          <form method="post" action="/plan/items/{{ i.id }}/start">{{ csrf_field() }}<button type="submit">Решать</button></form>
+          {% endif %}
+          <form method="post" action="/plan/items/{{ i.id }}/up">{{ csrf_field() }}<button type="submit" class="link" aria-label="Выше">↑</button></form>
+          <form method="post" action="/plan/items/{{ i.id }}/down">{{ csrf_field() }}<button type="submit" class="link" aria-label="Ниже">↓</button></form>
+          {% if not i.mandatory %}
+          <form method="post" action="/plan/items/{{ i.id }}/remove">{{ csrf_field() }}<button type="submit" class="link">Убрать</button></form>
+          {% endif %}
+        </div>
+        <details>
+          <summary>Перенести или причина</summary>
+          <form method="post" action="/plan/items/{{ i.id }}/move" class="stack">
+            {{ csrf_field() }}
+            <label>На день <input type="date" name="day" value="{{ tomorrow }}" min="{{ tomorrow }}" required></label>
+            <label>Причина{% if i.mandatory %} (обязательно){% endif %} <input type="text" name="note" maxlength="300" {% if i.mandatory %}required{% endif %}></label>
+            <button type="submit" class="secondary">Перенести</button>
+          </form>
+          <form method="post" action="/plan/items/{{ i.id }}/excuse" class="stack">
+            {{ csrf_field() }}
+            <label>Объективная причина (болезнь, соревнование, поездка…) <input type="text" name="note" maxlength="300" required></label>
+            <button type="submit" class="secondary">Отметить причину</button>
+          </form>
+        </details>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  </div>
+  {% endif %}
+</section>
+
+<div class="grid-2">
+  <section class="card stack">
+    <h2>Добавить свой пункт</h2>
+    <p class="meta">Правило 80/20: сам можно поменять не больше {{ change_limit }} мин плана в день
+      (уже поменяно {{ change_used }} мин). Обязательные пункты можно только перенести с причиной.</p>
+    <form method="post" action="/plan/add" class="row">
+      {{ csrf_field() }}
+      {{ subject_select("") }}
+      <input type="number" name="item" min="1" max="27" placeholder="№ задания" aria-label="Номер задания" required>
+      <input type="number" name="tasks" min="1" max="4" value="1" aria-label="Сколько задач">
+      <button type="submit" class="secondary">Добавить</button>
+    </form>
+  </section>
+  <section class="card stack">
+    <h2>Весь день — объективная причина</h2>
+    <p class="meta">Обязательные пункты перенесутся на ближайший день с окнами для учёбы, а этот день
+      не будет учитываться в дисциплине.</p>
+    <form method="post" action="/plan/excuse-day" class="row">
+      {{ csrf_field() }}
+      <input type="text" name="note" maxlength="300" placeholder="Например: заболел" required aria-label="Причина">
+      <button type="submit" class="secondary">Отметить день</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

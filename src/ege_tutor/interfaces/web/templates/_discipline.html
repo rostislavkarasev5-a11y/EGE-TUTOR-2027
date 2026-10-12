@@ -1,0 +1,8 @@
+<section class="card discipline {% if discipline.color %}disc-{{ discipline.color.value|lower }}{% endif %}">
+  <h2>Дисциплина: {{ discipline.color_name }}</h2>
+  <p>{{ discipline.message }}</p>
+  {% if plan %}
+  <p class="meta">Сегодня: обязательных выполнено {{ plan.mandatory_done_count }} из {{ plan.mandatory_count }}
+    (сегодняшний день в оценку войдёт после полуночи).</p>
+  {% endif %}
+</section>
