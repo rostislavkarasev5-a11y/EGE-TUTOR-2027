@@ -1,0 +1,173 @@
+# Подразделы каталога Решу ЕГЭ (sdamgia.ru) → навыки EGE-TUTOR-2027 (ADR-0021).
+# Названия подразделов — со скриншотов конструктора вариантов, присланных учеником 2026-10-12.
+# Ключ: номер задания → название подраздела (как на сайте) → навыки из content/*/topics.yaml.
+# Если подраздела нет в таблице, задаче ставятся навыки по умолчанию (default) этого номера.
+# Тексты задач Решу ЕГЭ в репозиторий не попадают: только эта таблица соответствий.
+
+MATH_PROFILE:
+  1:
+    default: [M01.triangles]
+    "Решение прямоугольного треугольника": [M01.triangles]
+    "Решение равнобедренного треугольника": [M01.triangles]
+    "Треугольники общего вида": [M01.triangles]
+    "Параллелограммы": [M01.quadrilaterals]
+    "Трапеция": [M01.quadrilaterals]
+    "Центральные и вписанные углы": [M01.circle]
+    "Касательная, хорда, секущая": [M01.circle]
+    "Вписанные окружности": [M01.circle]
+    "Описанные окружности": [M01.circle]
+  2:
+    default: [M02.coordinates]
+    "Векторы и операции с ними": [M02.coordinates, M02.dot_product]
+  3:
+    default: [M03.polyhedra]
+    "Куб": [M03.polyhedra]
+    "Прямоугольный параллелепипед": [M03.polyhedra]
+    "Элементы составных многогранников": [M03.polyhedra]
+    "Площадь поверхности составного многогранника": [M03.polyhedra]
+    "Объем составного многогранника": [M03.polyhedra]
+    "Объём составного многогранника": [M03.polyhedra]
+    "Призма": [M03.polyhedra]
+    "Пирамида": [M03.polyhedra]
+    "Комбинации тел": [M03.polyhedra, M03.solids_of_revolution]
+    "Цилиндр": [M03.solids_of_revolution]
+    "Конус": [M03.solids_of_revolution]
+    "Шар": [M03.solids_of_revolution]
+  4:
+    default: [M04.classical]
+    "Классическое определение вероятности": [M04.classical]
+  5:
+    default: [M05.sum_product]
+    "Теоремы о вероятностях событий": [M05.sum_product, M05.conditional]
+    "Новые задания банка MathЕГЭ": [M05.sum_product]
+  6:
+    default: [MSTAT.expectation]
+    "Задания для подготовки": [MSTAT.expectation, MSTAT.variance]
+  7:
+    default: [M06.algebraic]
+    "Линейные, квадратные, кубические уравнения": [M06.algebraic]
+    "Рациональные уравнения": [M06.algebraic]
+    "Иррациональные уравнения": [M06.irrational]
+    "Показательные уравнения": [M06.exponential]
+    "Логарифмические уравнения": [M06.logarithmic]
+    "Тригонометрические уравнения": [M06.trig_simple]
+  8:
+    default: [M07.powers_roots]
+    "Преобразования числовых рациональных выражений": [M07.powers_roots]
+    "Преобразования алгебраических выражений и дробей": [M07.powers_roots]
+    "Вычисление значений степенных выражений": [M07.powers_roots]
+    "Действия со степенями": [M07.powers_roots]
+    "Преобразования числовых иррациональных выражений": [M07.powers_roots]
+    "Преобразования буквенных иррациональных выражений": [M07.powers_roots]
+    "Преобразования числовых логарифмических выражений": [M07.logarithms]
+    "Преобразования буквенных логарифмических выражений": [M07.logarithms]
+    "Вычисление значений тригонометрических выражений": [M07.trig]
+    "Преобразования числовых тригонометрических выражений": [M07.trig]
+    "Преобразования буквенных тригонометрических выражений": [M07.trig]
+  9:
+    default: [M08.derivative_meaning]
+    "Физический смысл производной": [M08.derivative_meaning]
+    "Геометрический смысл производной, касательная": [M08.derivative_meaning]
+    "Применение производной к исследованию функций": [M08.derivative_graph]
+    "Первообразная": [M08.antiderivative]
+  10:
+    default: [M09.formula]
+    "Линейные уравнения и неравенства": [M09.formula]
+    "Квадратные и степенные уравнения и неравенства": [M09.formula]
+    "Рациональные уравнения и неравенства": [M09.formula]
+    "Иррациональные уравнения и неравенства": [M09.formula]
+    "Показательные уравнения и неравенства": [M09.formula]
+    "Логарифмические уравнения и неравенства": [M09.formula]
+    "Тригонометрические уравнения и неравенства": [M09.formula]
+    "Разные задачи": [M09.formula]
+  11:
+    default: [M10.motion]
+    "Задачи на проценты, сплавы и смеси": [M10.percent_mixtures]
+    "Задачи на движение по прямой": [M10.motion]
+    "Задачи на движение по окружности": [M10.motion]
+    "Задачи на движение по воде": [M10.motion]
+    "Задачи на совместную работу": [M10.work]
+    "Задачи на прогрессии": [M10.progressions]
+  12:
+    default: [M11.read_graphs]
+    "Линейные функции": [M11.read_graphs]
+    "Параболы": [M11.read_graphs]
+    "Гиперболы": [M11.read_graphs]
+    "Корни": [M11.read_graphs]
+    "Показательные и логарифмические функции": [M11.read_graphs]
+    "Тригонометрические функции": [M11.read_graphs]
+    "Комбинированные задачи": [M11.read_graphs]
+  13:
+    default: [M16.loans]
+    "Вклады": [M16.optimization]
+    "Кредиты": [M16.loans]
+  14:
+    default: [M13.trig_equations, M13.root_selection]
+    "Показательные уравнения": [M13.exp_log_equations, M13.root_selection]
+    "Рациональные уравнения": [M13.root_selection]
+    "Иррациональные уравнения": [M13.root_selection]
+    "Логарифмические уравнения": [M13.exp_log_equations, M13.root_selection]
+    "Тригонометрия и логарифмы": [M13.trig_equations, M13.exp_log_equations]
+    "Тригонометрия и показательные выражения": [M13.trig_equations, M13.exp_log_equations]
+  15:
+    default: [M14.angles_distances, M14.proof]
+    "Сечения пирамид": [M14.sections, M14.proof]
+    "Сечения призм": [M14.sections, M14.proof]
+    "Сечения параллелепипедов": [M14.sections, M14.proof]
+    "Сечения круглых тел": [M14.sections, M14.proof]
+  16:
+    default: [M15.intervals]
+    "Показательные неравенства": [M15.exp_log_inequalities, M15.intervals]
+    "Неравенства рациональные относительно показательной функции": [M15.exp_log_inequalities, M15.intervals]
+    "Логарифмические неравенства первой и второй степени": [M15.exp_log_inequalities, M15.intervals]
+    "Неравенства рациональные относительно логарифмической функции": [M15.exp_log_inequalities, M15.intervals]
+    "Неравенства с логарифмами по переменному основанию": [M15.exp_log_inequalities, M15.intervals]
+    "Неравенства с логарифмами по переменному основанию, применение рационализации": [M15.exp_log_inequalities, M15.intervals]
+    "Логарифмические неравенства, разные задачи": [M15.exp_log_inequalities, M15.intervals]
+    "Показательные выражения и иррациональности": [M15.exp_log_inequalities, M15.intervals]
+    "Логарифмы и показательные выражения": [M15.exp_log_inequalities, M15.intervals]
+    "Логарифмы и иррациональности": [M15.exp_log_inequalities, M15.intervals]
+  17:
+    default: [MOPT.modeling, MOPT.integer_optimization]
+  18:
+    default: [M17.proof, M17.computation]
+  19:
+    default: [M18.graphical, M18.analytical]
+    "Использование симметрий": [M18.analytical]
+    "Использование монотонности, оценок": [M18.analytical]
+    "Аналитическое решение уравнений и неравенств": [M18.analytical]
+    "Аналитическое решение систем": [M18.analytical]
+    "Координаты (x, a)": [M18.graphical]
+    "Уравнение окружности": [M18.graphical]
+    "Расстояние между точками": [M18.graphical]
+  20:
+    default: [M19.divisibility, M19.estimate_example]
+
+INFORMATICS:
+  1: {default: [I01.graphs]}
+  2: {default: [I02.truth_tables]}
+  3: {default: [I03.relational]}
+  4: {default: [I04.prefix_codes]}
+  5: {default: [I05.number_algorithms]}
+  6: {default: [I06.turtle]}
+  7: {default: [I07.media_volume]}
+  8: {default: [I08.counting]}
+  9: {default: [I09.spreadsheet_rows]}
+  10: {default: [I13.ip_masks]}
+  11: {default: [I11.info_volume]}
+  12: {default: [I12.string_rewriting]}
+  13: {default: [I23.program_count]}
+  14: {default: [I14.bases]}
+  15: {default: [I15.logic_expressions]}
+  16: {default: [I16.recursion]}
+  17: {default: [I17.sequences]}
+  18: {default: [I18.grid_dp]}
+  19: {default: [I19.winning_strategy]}
+  20: {default: [I19.winning_strategy]}
+  21: {default: [I19.winning_strategy]}
+  22: {default: [I22.processes]}
+  23: {default: [IGRAPH.path_count]}
+  24: {default: [I24.strings_file]}
+  25: {default: [I25.divisors_masks]}
+  26: {default: [I26.sorting_greedy]}
+  27: {default: [I27.clusters]}

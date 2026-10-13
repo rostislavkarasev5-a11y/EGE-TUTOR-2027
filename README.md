@@ -35,6 +35,7 @@ ege profile [--name ...] [--target-math 90] [--target-informatics 90]
 ege exam math|informatics      структура экзамена
 ege topics [-s math] [--skills]
 ege import ФАЙЛ [--apply]      проверить файл с задачами / добавить задачи
+                               (.yaml, .csv или сохранённая страница Решу ЕГЭ .html)
 ege imports                    история импортов
 ege undo-import НОМЕР          отменить импорт
 ege tasks [-s math] [-n 6] [--source AI_GENERATED]

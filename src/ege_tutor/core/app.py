@@ -17,6 +17,7 @@ from ege_tutor.core.domain import (
     AICall,
     AINote,
     AIStatus,
+    AnswerKind,
     Attempt,
     AttemptMode,
     CalendarEvent,
@@ -61,6 +62,8 @@ from ege_tutor.core.errors import AppError
 from ege_tutor.core.ports import (
     AIService,
     Clock,
+    RemoteFileError,
+    RemoteFiles,
     Repository,
     RepositoryError,
     Sandbox,
@@ -76,7 +79,15 @@ from ege_tutor.core.services.mastery import Calibration, MasteryService
 from ege_tutor.core.services.planner import PlannerService, PlannerSources
 from ege_tutor.core.services.planner import parse_time as parse_time  # для CLI и сайта
 from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
+from ege_tutor.core.services.reshu_ege import (
+    ReshuConversion,
+    ReshuPageError,
+    SubsectionMap,
+    convert_page,
+    load_subsection_maps,
+)
 from ege_tutor.core.services.voice import SpeechClip, VoiceService, speakable
+from ege_tutor.remote import SdamgiaFiles
 from ege_tutor.sandbox import make_sandbox
 from ege_tutor.subjects import tutor_for
 
@@ -132,8 +143,12 @@ class TutorApp:
         repository: Repository,
         catalog: Catalog,
         speech: SpeechService | None = None,
+        remote_files: RemoteFiles | None = None,
+        reshu_maps: dict[Subject, SubsectionMap] | None = None,
     ) -> None:
         self.settings = settings
+        self.remote_files = remote_files or _NoRemoteFiles()
+        self.reshu_maps = reshu_maps or {}
         self.clock = clock
         self.ai = ai
         self.sandbox = sandbox
@@ -192,6 +207,7 @@ class TutorApp:
         sandbox: Sandbox | None = None,
         ai: AIService | None = None,
         speech: SpeechService | None = None,
+        remote_files: RemoteFiles | None = None,
     ) -> "TutorApp":
         """Собрать приложение с реализациями по умолчанию для текущей фазы.
 
@@ -213,6 +229,8 @@ class TutorApp:
             sandbox=sandbox or make_sandbox(settings.app.sandbox),
             repository=repository,
             catalog=catalog,
+            remote_files=remote_files or SdamgiaFiles(),
+            reshu_maps=load_subsection_maps(settings.content_dir),
         )
 
     def close(self) -> None:
@@ -346,6 +364,20 @@ class TutorApp:
             created_at=self.clock.now(),
         )
         return ImportResult(report, batch)
+
+    def convert_reshu_page(self, page_path: Path) -> ReshuConversion:
+        """Сохранённую страницу результатов Решу ЕГЭ — в файл задач рядом с ней (ADR-0021).
+
+        Дальше файл проверяется и записывается обычным импортом (preview_import / import_tasks).
+        """
+        extended = {
+            subject: {i.number for i in spec.items if i.answer_kind == AnswerKind.EXTENDED}
+            for subject, spec in self.catalog.specs.items()
+        }
+        try:
+            return convert_page(page_path, self.reshu_maps, self.remote_files, extended)
+        except ReshuPageError as e:
+            raise AppError(str(e)) from e
 
     def import_batches(self) -> list[ImportBatch]:
         return self.repository.list_import_batches()
@@ -816,3 +848,10 @@ class TutorApp:
 
     def speech_clip_path(self, name: str) -> Path | None:
         return self.voice.clip_path(name)
+
+
+class _NoRemoteFiles:
+    """Скачивание выключено (тесты и сборка без сети): честно сообщает об этом."""
+
+    def fetch(self, url: str, max_bytes: int) -> tuple[bytes, str]:
+        raise RemoteFileError("скачивание файлов из интернета выключено")

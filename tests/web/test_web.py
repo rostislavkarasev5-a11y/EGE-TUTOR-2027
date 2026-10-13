@@ -919,3 +919,31 @@ def test_profile_time_zone(client, tutor):
     assert tutor.utc_offset_hours() == 5
     bad = post(client, "/profile", {"utc_offset": "abc"})
     assert "Часовой пояс" in bad.text
+
+
+def test_import_reshu_ege_page(client, tutor):
+    from tests.integration.test_reshu_ege import MATH_PAGE, FakeRemote
+
+    tutor.remote_files = FakeRemote()
+    preview = _preview(client, "Вариант.html", MATH_PAGE.encode())
+    assert "годных: <strong>3</strong>" in preview.text
+    upload = re.search(r'name="token" value="([^"]+)"', preview.text).group(1)
+    applied = post(client, "/import/apply", {"token": upload})
+    assert "Добавлено задач: 3" in applied.text
+
+    task = next(t for t in tutor.tasks(Subject.MATH_PROFILE) if t.assets)
+    page = client.get(f"/tasks/{task.id}").text
+    assert f'class="task-figure" src="/tasks/{task.id}/files/0"' in page
+    assert "Решу ЕГЭ, задача №" in page
+    figure = client.get(f"/tasks/{task.id}/files/0")
+    assert figure.content == b"\x89PNG fake"
+    assert "sandbox" in figure.headers["content-security-policy"]
+
+
+def test_import_reshu_variant_page_is_explained(client):
+    page = (
+        "<html><head><title>ЕГЭ–2026, математика профильная</title></head><body>"
+        '<div class="prob_maindiv"></div></body></html>'
+    )
+    response = _preview(client, "variant.html", page.encode())
+    assert "страница самого варианта" in response.text

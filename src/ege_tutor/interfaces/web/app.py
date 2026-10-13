@@ -153,6 +153,15 @@ def display_answer(task: Task) -> str:
     return task.answer
 
 
+FILE_CSP = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
+
+
+def is_image(file_name: str) -> bool:
+    """Файл задачи — картинка, её можно показать прямо в условии."""
+    return Path(file_name).suffix.lower() in IMAGE_SUFFIXES
+
+
 def utc_time(value: dt.datetime | None) -> str:
     return value.strftime("%d.%m.%Y %H:%M") + " UTC" if value else "—"
 
@@ -260,7 +269,9 @@ def create_app(
         speech_max_seconds=tutor.settings.app.speech.max_recording_seconds,
         version=__version__,
     )
-    templates.env.filters.update(minutes=minutes, display_answer=display_answer, utc_time=utc_time)
+    templates.env.filters.update(
+        minutes=minutes, display_answer=display_answer, utc_time=utc_time, is_image=is_image
+    )
 
     # ── сессия, вход, CSRF ──
 
@@ -883,7 +894,15 @@ def create_app(
         if not path.is_relative_to(core.asset_root.resolve()) or not path.is_file():
             flash(request, "файл задачи не найден на диске", "error")
             return redirect(f"/tasks/{task_id}")
-        return FileResponse(path, filename=asset.file_name)
+        # Файлы задач пришли извне (например, рисунки Решу ЕГЭ в SVG): запрещаем им
+        # выполнять скрипты, если файл открыть отдельно.
+        return FileResponse(
+            path,
+            filename=asset.file_name,
+            headers={
+                "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+            },
+        )
 
     # ── решение ──
 
@@ -1340,6 +1359,22 @@ def create_app(
         except uploads.UploadError as e:
             flash(request, str(e), "error")
             return redirect("/import")
+        if uploads.is_page(path):
+            try:
+                conversion = core.convert_reshu_page(path)
+            except AppError as e:
+                uploads.discard(upload_root, token)
+                flash(request, str(e), "error")
+                return redirect("/import")
+            finally:
+                path.unlink(missing_ok=True)  # саму страницу не храним
+            path = conversion.task_file
+            if conversion.file_errors:
+                flash(
+                    request,
+                    "Не все рисунки скачались: " + "; ".join(conversion.file_errors[:5]),
+                    "error",
+                )
         report = core.preview_import(path)
         can_apply = bool(report.accepted) and not report.file_error
         if not can_apply:
