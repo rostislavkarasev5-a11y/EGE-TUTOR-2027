@@ -413,7 +413,7 @@ def test_learn_lessons_theory():
     tutor = TutorApp.create()
     tutor.install_starter_bank()
     tutor.close()
-    assert "теории по этой теме пока нет" in invoke("theory", "M01.area").output.lower()
+    assert "теории по этой теме пока нет" in invoke("theory", "M14.proof").output.lower()
     shown = invoke("theory", "M04.classical").output
     assert "Классическое определение вероятности" in shown and "Пример 7" in shown
     assert invoke("theory", "X.nope").exit_code == 1

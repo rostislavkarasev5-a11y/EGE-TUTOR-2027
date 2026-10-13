@@ -970,7 +970,7 @@ def test_theory_page_and_unknown_skill(client):
     assert "<h3>Что такое вероятность</h3>" in page
     assert "Пример 7." in page
     assert "Объясни иначе" not in page  # без ИИ кнопки нет
-    assert "Теории по этой теме пока нет" in client.get("/theory/M01.area").text
+    assert "Теории по этой теме пока нет" in client.get("/theory/M14.proof").text
     assert "нет в каталоге" in client.get("/theory/X.nope").text
     assert "нет в каталоге" in client.get("/learn/skill/X.nope").text
 
