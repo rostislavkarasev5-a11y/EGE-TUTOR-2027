@@ -536,3 +536,11 @@ button.listen.loading { opacity: 0.6; cursor: progress; }
 button.listen.playing { background: var(--ai-line); color: #fff; }
 button.listen.ready { border-color: var(--accent); color: var(--accent); }
 button.listen.failed { border-color: var(--bad); color: var(--bad); }
+
+/* учебный блок (Phase 8) */
+.steps { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; padding: 0; margin: 0 0 16px; }
+.steps li { padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line, #333); font-size: 14px; color: var(--muted); }
+.steps li.done { color: inherit; }
+.steps li.current { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.theory h3 { margin-top: 20px; }
+.theory p, .theory li { line-height: 1.6; }

@@ -1,6 +1,7 @@
 """Загрузка и проверка конфигурации из папки config/ (ADR-0005).
 
-Конфигурация — четыре TOML-файла: app.toml, mastery.toml, diagnostics.toml, planner.toml.
+Конфигурация — пять TOML-файлов: app.toml, mastery.toml, diagnostics.toml, planner.toml,
+learning.toml.
 Каждый проверяется моделью Pydantic; опечатка в имени ключа — ошибка, а не тихое игнорирование.
 """
 
@@ -364,6 +365,29 @@ class PlannerConfig(_Strict):
     discipline: PlannerDiscipline
 
 
+# ── learning.toml ───────────────────────────────────────────────────────────
+
+
+class LearningConfig(_Strict):
+    """Учебный цикл (ADR-0022)."""
+
+    examples: Positive
+    independent_tasks: Positive
+    pass_share: Share
+    mistake_tasks: Positive
+    homework_base: Positive
+    homework_per_mistake: Annotated[int, Field(ge=0)]
+    homework_max: Positive
+    homework_due_days: Annotated[int, Field(ge=0, le=7)]
+    theory_minutes: Positive
+
+    @model_validator(mode="after")
+    def _homework_base_fits(self) -> Self:
+        if self.homework_base > self.homework_max:
+            raise ValueError("homework_base не может быть больше homework_max")
+        return self
+
+
 # ── загрузка ────────────────────────────────────────────────────────────────
 
 
@@ -382,6 +406,7 @@ class Settings(_Strict):
     mastery: MasteryConfig
     diagnostics: DiagnosticsConfig
     planner: PlannerConfig
+    learning: LearningConfig
 
     @property
     def data_dir(self) -> Path:
@@ -445,4 +470,5 @@ def load_settings(config_dir: Path | None = None) -> Settings:
         mastery=_read_toml(config_dir / "mastery.toml", MasteryConfig),
         diagnostics=_read_toml(config_dir / "diagnostics.toml", DiagnosticsConfig),
         planner=_read_toml(config_dir / "planner.toml", PlannerConfig),
+        learning=_read_toml(config_dir / "learning.toml", LearningConfig),
     )

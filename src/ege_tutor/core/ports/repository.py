@@ -33,6 +33,10 @@ from ege_tutor.core.domain import (
     Forecast,
     HintEvent,
     ImportBatch,
+    Lesson,
+    LessonStatus,
+    LessonStep,
+    LessonTaskRole,
     MasteryRecord,
     MasterySnapshot,
     Mistake,
@@ -505,3 +509,41 @@ class Repository(Protocol):
     def finish_control_session(
         self, session_id: int, *, status: ControlStatus, passed_tasks: int, at: dt.datetime
     ) -> ControlSession: ...
+
+    # ── учебный цикл (Phase 8, ADR-0022) ──
+
+    def create_lesson(self, *, subject: Subject, skill_code: str, at: dt.datetime) -> Lesson: ...
+
+    def get_lesson(self, lesson_id: int) -> Lesson | None: ...
+
+    def list_lessons(
+        self,
+        skill_code: str | None = None,
+        status: LessonStatus | None = None,
+        limit: int = 50,
+    ) -> list[Lesson]:
+        """Учебные блоки, новые первыми."""
+        ...
+
+    def update_lesson(
+        self,
+        lesson_id: int,
+        *,
+        step: LessonStep,
+        status: LessonStatus,
+        at: dt.datetime,
+        mistake_skills: Sequence[str] | None = None,
+        homework_due: dt.date | None = None,
+    ) -> Lesson:
+        """Сменить шаг. finished_at ставится, когда статус перестаёт быть ACTIVE."""
+        ...
+
+    def add_lesson_attempt(self, lesson_id: int, attempt_id: int, role: LessonTaskRole) -> None: ...
+
+    def lesson_attempts(self, lesson_id: int) -> list[tuple[LessonTaskRole, Attempt, bool]]:
+        """Попытки блока по порядку: роль, попытка, разобрана ли ошибка."""
+        ...
+
+    def mark_lesson_attempt_reviewed(self, attempt_id: int, at: dt.datetime) -> None: ...
+
+    def lesson_of_attempt(self, attempt_id: int) -> int | None: ...

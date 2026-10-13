@@ -37,6 +37,9 @@ from ege_tutor.core.domain import (
     EventKind,
     ImportBatchStatus,
     ItemBasis,
+    LessonStatus,
+    LessonStep,
+    LessonTaskRole,
     MistakeCategory,
     Part2GradeStatus,
     PlanItemKind,
@@ -725,3 +728,29 @@ class ControlAttemptRow(Base):
 
     attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"), primary_key=True)
     session_id: Mapped[int] = mapped_column(ForeignKey("control_session.id"), index=True)
+
+
+class LessonRow(Base):
+    """Учебный блок по навыку (Phase 8, ADR-0022). Шаг хранится, чтобы продолжить позже."""
+
+    __tablename__ = "lesson"
+    __table_args__ = (Index("ix_lesson_skill", "skill_code"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subject: Mapped[Subject] = mapped_column(_enum(Subject), ForeignKey("subject.code"))
+    skill_code: Mapped[str] = mapped_column(String(100))
+    step: Mapped[LessonStep] = mapped_column(_enum(LessonStep))
+    status: Mapped[LessonStatus] = mapped_column(_enum(LessonStatus))
+    mistake_skills_json: Mapped[str] = mapped_column(Text, default="[]")
+    homework_due: Mapped[dt.date | None] = mapped_column(Date)
+    started_at: Mapped[dt.datetime] = mapped_column(UTCDateTime)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)
+
+
+class LessonAttemptRow(Base):
+    __tablename__ = "lesson_attempt"
+
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("attempt.id"), primary_key=True)
+    lesson_id: Mapped[int] = mapped_column(ForeignKey("lesson.id"), index=True)
+    role: Mapped[LessonTaskRole] = mapped_column(_enum(LessonTaskRole))
+    reviewed_at: Mapped[dt.datetime | None] = mapped_column(UTCDateTime)

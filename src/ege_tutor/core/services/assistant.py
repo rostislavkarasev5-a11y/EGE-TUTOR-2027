@@ -559,6 +559,19 @@ class AssistantService:
             raise AppError(f"оценка №{grade_id} не найдена")
         return grade
 
+    # ── «Объясни иначе» (Phase 8, ADR-0022) ─────────────────────────────────
+
+    def retell(self, subject: Subject, title: str, text: str) -> str:
+        """Пересказ теории или примера. Не сохраняется: это не новые знания, а другая подача
+        уже проверенного текста. Вызов записывается в учёт трат."""
+        self._require_available()
+        try:
+            reply = self._ai.retell(subject, title, text)
+        except AIError as e:
+            raise self._failed(AIPurpose.RETELL, e, None, None) from e
+        self._record(AIPurpose.RETELL, AICallStatus.OK, reply.usage)
+        return reply.text
+
     # ── похожая задача ──────────────────────────────────────────────────────
 
     @staticmethod

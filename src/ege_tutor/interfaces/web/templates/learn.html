@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field with context %}
+{% block content %}
+<h1>Учёба</h1>
+<p class="meta">Учебный блок — одна тема от начала до конца: теория → примеры → самостоятельные задачи →
+  проверка → разбор ошибок → задачи на ошибки → домашка. Блок можно прервать и продолжить позже.</p>
+
+{% if suggestions %}
+<section class="card">
+  <h2>Советую сейчас</h2>
+  {% for s in suggestions %}
+  <p><strong>{{ SUBJECT_NAMES[s.subject] }}</strong>: {{ s.reason }}.
+    <a href="/learn/skill/{{ s.skill_code }}">{% if s.lesson %}Продолжить{% else %}Начать{% endif %}</a></p>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if active %}
+<section class="card">
+  <h2>Начатые блоки</h2>
+  <table>
+    <tr><th>Тема</th><th>Шаг</th><th>Начат</th></tr>
+    {% for x in active %}
+    <tr>
+      <td><a href="/lessons/{{ x.id }}">{{ skill_title(x.skill_code) }}</a></td>
+      <td>{{ x.step_name }}{% if x.step == LessonStep.HOMEWORK and x.homework_due %} · до {{ x.homework_due.strftime("%d.%m") }}{% endif %}</td>
+      <td>{{ x.started_at|utc_time }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+
+{% for subject, topics in topics.items() %}
+<section class="card">
+  <h2>{{ SUBJECT_NAMES[subject] }}: все темы</h2>
+  {% for topic in topics if topic.skills %}
+  <details>
+    <summary>{{ topic.title }}{% if topic.exam_items %} · №{{ topic.exam_items|join(", ") }}{% endif %}</summary>
+    <ul>
+      {% for skill in topic.skills %}
+      <li><a href="/learn/skill/{{ skill.code }}">{{ skill.title }}</a>
+        {% if has_theory(skill.code) %}· <a href="/theory/{{ skill.code }}">теория</a>{% else %}<span class="meta">· теории пока нет</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endfor %}
+</section>
+{% endfor %}
+
+{% if finished %}
+<section class="card">
+  <h2>Пройденные и брошенные</h2>
+  <table>
+    <tr><th>Тема</th><th>Итог</th><th>Закончен</th></tr>
+    {% for x in finished %}
+    <tr>
+      <td><a href="/lessons/{{ x.id }}">{{ skill_title(x.skill_code) }}</a></td>
+      <td>{{ LESSON_STATUS_NAMES[x.status] }}</td>
+      <td>{{ x.finished_at|utc_time }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}

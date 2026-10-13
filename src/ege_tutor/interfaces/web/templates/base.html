@@ -12,7 +12,7 @@
 </head>
 {% set path = request.url.path %}
 {% macro nav_link(href, text) -%}
-<a href="{{ href }}"{% if path == href or (href in ("/tasks", "/diagnostics", "/mistakes", "/control") and path.startswith(href ~ "/")) or (href == "/tasks" and path.startswith(("/attempts/", "/grades/"))) %} class="active" aria-current="page"{% endif %}>{{ text }}</a>
+<a href="{{ href }}"{% if path == href or (href in ("/tasks", "/diagnostics", "/mistakes", "/control", "/learn") and path.startswith(href ~ "/")) or (href == "/tasks" and path.startswith(("/attempts/", "/grades/"))) or (href == "/learn" and path.startswith(("/lessons/", "/theory/"))) %} class="active" aria-current="page"{% endif %}>{{ text }}</a>
 {%- endmacro %}
 <body{% if not logged_in %} class="page-plain"{% endif %}>
 <div class="shell">
@@ -22,6 +22,7 @@
     <nav aria-label="Разделы">
       {{ nav_link("/", "Главная") }}
       {{ nav_link("/plan", "План") }}
+      {{ nav_link("/learn", "Учёба") }}
       {{ nav_link("/calendar", "Расписание") }}
       {{ nav_link("/tasks", "Задачи") }}
       {{ nav_link("/diagnostics", "Диагностика") }}

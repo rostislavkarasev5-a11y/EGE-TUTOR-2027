@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "macros.html" import ai_label, csrf_field with context %}
+{% macro retell(number) -%}
+{% if retold and retold_for == number %}
+<div class="ai-box">
+  <h3>Объяснение иначе {{ ai_label() }}</h3>
+  <div class="statement">{{ retold }}</div>
+  <p class="meta">ИИ может ошибаться: верно то, что написано в теории и в ответе примера.</p>
+</div>
+{% elif ai.available %}
+<form method="post" action="/theory/{{ skill.code }}/retell">{{ csrf_field() }}
+  <input type="hidden" name="example" value="{{ number or '' }}">
+  <button class="secondary" type="submit">Объясни иначе (ИИ)</button></form>
+{% endif %}
+{%- endmacro %}
+{% block content %}
+<h1>{{ skill.title }}: теория</h1>
+<p class="meta">{{ SUBJECT_NAMES[subject] }}{% if skill.exam_items %} · задание №{{ skill.exam_items|join(", ") }}{% endif %}</p>
+{% if theory %}
+<section class="card theory">
+  <p class="meta">{{ ai_label() }} Теорию написал ИИ своими словами, это не материал ФИПИ.</p>
+  {{ theory.text|theory_html }}
+  {{ retell(0) }}
+</section>
+{% for ex in theory.examples %}
+<section class="card">
+  <h2>Пример {{ loop.index }}. {{ ex.title }}</h2>
+  <div class="statement">{{ ex.statement }}</div>
+  <details{% if retold and retold_for == loop.index %} open{% endif %}><summary>Решение</summary>
+    <div class="statement">{{ ex.solution }}</div>
+    <p>Ответ: <strong>{{ ex.answer }}</strong></p>
+    {{ retell(loop.index) }}
+  </details>
+</section>
+{% endfor %}
+{% else %}
+<section class="card"><p>Теории по этой теме пока нет.</p></section>
+{% endif %}
+<p>{% if active %}<a href="/lessons/{{ active.id }}">Вернуться к учебному блоку</a>{% else %}<a href="/learn/skill/{{ skill.code }}">Учебный блок по теме</a>{% endif %}</p>
+{% endblock %}

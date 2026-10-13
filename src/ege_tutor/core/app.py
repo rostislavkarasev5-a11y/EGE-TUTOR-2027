@@ -41,6 +41,12 @@ from ege_tutor.core.domain import (
     ExamSpec,
     ImportBatch,
     ImportReport,
+    Lesson,
+    LessonCheck,
+    LessonProgress,
+    LessonStatus,
+    LessonSuggestion,
+    LessonTask,
     MasteryAggregate,
     Mistake,
     MistakeCategory,
@@ -49,6 +55,7 @@ from ege_tutor.core.domain import (
     PlanItem,
     PlanItemKind,
     ReviewItem,
+    Skill,
     SkillMastery,
     StopReason,
     StudentProfile,
@@ -56,6 +63,8 @@ from ege_tutor.core.domain import (
     Task,
     TaskAsset,
     TaskSource,
+    Theory,
+    TheoryExample,
     Topic,
 )
 from ege_tutor.core.errors import AppError
@@ -75,8 +84,9 @@ from ege_tutor.core.services.code import CodeService
 from ege_tutor.core.services.content_import import build_report
 from ege_tutor.core.services.control import ControlService, ControlStep
 from ege_tutor.core.services.diagnostics import DiagnosticsService
+from ege_tutor.core.services.learning import LessonService, LessonSources
 from ege_tutor.core.services.mastery import Calibration, MasteryService
-from ege_tutor.core.services.planner import PlannerService, PlannerSources
+from ege_tutor.core.services.planner import OWN_PAGE_KINDS, PlannerService, PlannerSources
 from ege_tutor.core.services.planner import parse_time as parse_time  # для CLI и сайта
 from ege_tutor.core.services.practice import AttemptResult, PracticeService, ShownHint
 from ege_tutor.core.services.reshu_ege import (
@@ -86,12 +96,13 @@ from ege_tutor.core.services.reshu_ege import (
     convert_page,
     load_subsection_maps,
 )
+from ege_tutor.core.services.theory import TheoryLibrary, load_theory
 from ege_tutor.core.services.voice import SpeechClip, VoiceService, speakable
 from ege_tutor.remote import SdamgiaFiles
 from ege_tutor.sandbox import make_sandbox
 from ege_tutor.subjects import tutor_for
 
-CURRENT_PHASE = 7
+CURRENT_PHASE = 8
 DB_FILE_NAME = "ege.db"
 BACKUP_PREFIX = "ege-"
 DEFAULT_BACKUPS_KEPT = 14
@@ -143,6 +154,7 @@ class TutorApp:
         repository: Repository,
         catalog: Catalog,
         speech: SpeechService | None = None,
+        theory: TheoryLibrary | None = None,
         remote_files: RemoteFiles | None = None,
         reshu_maps: dict[Subject, SubsectionMap] | None = None,
     ) -> None:
@@ -187,6 +199,23 @@ class TutorApp:
                 task_for_skill=self.practice.task_for_skill,
                 diagnostic_tasks=self.diagnostic_task_count,
                 profile_offset=lambda: self.repository.get_profile().utc_offset_hours,
+                lesson_suggestion=lambda subject: self.learning.suggestion(subject),
+            ),
+        )
+        # Учебный цикл (Phase 8, ADR-0022): теория из content/theory/, шаги — в CORE.
+        self.theory_library = theory or TheoryLibrary()
+        self.learning = LessonService(
+            repository,
+            clock,
+            settings.learning,
+            catalog,
+            self.theory_library,
+            LessonSources(
+                tasks_for_skill=self.practice.tasks_for_skill,
+                start_attempt=self.start_attempt,
+                skill_masteries=self.skill_masteries,
+                schedule_homework=self._schedule_homework,
+                today=self.today,
             ),
         )
         self.voice = VoiceService(
@@ -221,6 +250,7 @@ class TutorApp:
         if repository is None:
             repository = SqlRepository.open(settings.data_dir / DB_FILE_NAME)
         repository.sync_catalog(catalog)
+        theory = load_theory(settings.content_dir, catalog)
         return cls(
             settings=settings,
             clock=clock or SystemClock(),
@@ -229,6 +259,7 @@ class TutorApp:
             sandbox=sandbox or make_sandbox(settings.app.sandbox),
             repository=repository,
             catalog=catalog,
+            theory=theory,
             remote_files=remote_files or SdamgiaFiles(),
             reshu_maps=load_subsection_maps(settings.content_dir),
         )
@@ -434,11 +465,13 @@ class TutorApp:
     def submit_answer(self, attempt_id: int, answer: str) -> AttemptResult:
         result = self.practice.submit(attempt_id, answer)
         self.mastery.on_attempt_finished(result.attempt, result.task)
+        self.learning.after_attempt(attempt_id)
         return result
 
     def give_up(self, attempt_id: int) -> Attempt:
         attempt = self.practice.give_up(attempt_id)
         self.mastery.on_attempt_finished(attempt, self.task(attempt.task_id))
+        self.learning.after_attempt(attempt_id)
         return attempt
 
     def abandon_attempt(self, attempt_id: int) -> Attempt:
@@ -695,7 +728,10 @@ class TutorApp:
                 raise AppError("для этого навыка нет проверенных задач")
             mode = AttemptMode.REVIEW if item.kind == PlanItemKind.REVIEW else AttemptMode.PRACTICE
             return task, mode
-        raise AppError("этот пункт выполняется на своей странице (диагностика или контрольная)")
+        assert item.kind in OWN_PAGE_KINDS
+        raise AppError(
+            "этот пункт выполняется на своей странице (диагностика, контрольная или учёба)"
+        )
 
     def start_plan_item(self, item_id: int) -> Attempt:
         """Начать следующую задачу пункта плана (тренировка, повторение, задачи на ошибку)."""
@@ -749,6 +785,91 @@ class TutorApp:
 
     def control_session_of_attempt(self, attempt_id: int) -> int | None:
         return self.control.session_of_attempt(attempt_id)
+
+    # ── учебный цикл (Phase 8, ADR-0022) ────────────────────────────────────
+
+    def _schedule_homework(self, lesson: Lesson, tasks: int) -> None:
+        assert lesson.homework_due is not None
+        _, skill = self.learning.skill(lesson.skill_code)
+        self.planner.add_homework_item(
+            lesson.homework_due, lesson.subject, lesson.skill_code, tasks, skill.title
+        )
+
+    def theory(self, skill_code: str) -> Theory | None:
+        """Теория навыка (написана ИИ, проверена тестами) или None, если её ещё нет."""
+        return self.learning.theory(skill_code)
+
+    def theory_examples(self, skill_code: str) -> tuple[TheoryExample, ...]:
+        return self.learning.examples(skill_code)
+
+    def has_theory(self, skill_code: str) -> bool:
+        return self.learning.has_theory(skill_code)
+
+    def skill(self, skill_code: str) -> tuple[Subject, Skill]:
+        return self.learning.skill(skill_code)
+
+    def start_lesson(self, skill_code: str) -> Lesson:
+        """Начать учебный блок по навыку или вернуть уже начатый."""
+        return self.learning.start(skill_code)
+
+    def lesson(self, lesson_id: int) -> Lesson:
+        return self.learning.lesson(lesson_id)
+
+    def lessons(self, status: LessonStatus | None = None, limit: int = 50) -> list[Lesson]:
+        return self.learning.lessons(status, limit)
+
+    def lesson_progress(self, lesson_id: int) -> LessonProgress:
+        """Шаг блока и сколько задач шага сделано (выполненные шаги закрываются сами)."""
+        return self.learning.progress(lesson_id)
+
+    def lesson_tasks(self, lesson_id: int) -> list[LessonTask]:
+        return self.learning.tasks(lesson_id)
+
+    def lesson_check(self, lesson_id: int) -> LessonCheck:
+        return self.learning.check(lesson_id)
+
+    def confirm_lesson_step(self, lesson_id: int) -> Lesson:
+        """«Прочитал», «Понял» или «Дальше» на шагах теории, примеров и проверки."""
+        return self.learning.confirm(lesson_id)
+
+    def lesson_attempt(self, lesson_id: int) -> Attempt | None:
+        """Задача текущего шага блока: открытая или новая. None — задач на шаге нет."""
+        return self.learning.next_attempt(lesson_id)
+
+    def mark_lesson_mistake_reviewed(self, lesson_id: int, attempt_id: int) -> Lesson:
+        return self.learning.mark_reviewed(lesson_id, attempt_id)
+
+    def abandon_lesson(self, lesson_id: int) -> Lesson:
+        lesson = self.learning.lesson(lesson_id)
+        progress = self.learning.progress(lesson.id)
+        if progress.open_attempt_id is not None:
+            self.practice.abandon(progress.open_attempt_id)
+        return self.learning.abandon(lesson_id)
+
+    def lesson_of_attempt(self, attempt_id: int) -> int | None:
+        return self.learning.lesson_of_attempt(attempt_id)
+
+    def retell_theory(self, skill_code: str, example: int | None = None) -> str:
+        """«Объясни иначе»: ИИ пересказывает теорию навыка или её пример (номер с 1)."""
+        theory = self.learning.theory(skill_code)
+        if theory is None:
+            raise AppError("теории по этой теме пока нет")
+        subject, _ = self.learning.skill(skill_code)
+        if example is None:
+            return self.assistant.retell(subject, theory.title, theory.text)
+        if not 1 <= example <= len(theory.examples):
+            raise AppError(f"примера №{example} нет")
+        ex = theory.examples[example - 1]
+        text = f"{ex.statement}\n\nРешение: {ex.solution}\nОтвет: {ex.answer}"
+        return self.assistant.retell(subject, f"{theory.title}, пример «{ex.title}»", text)
+
+    def active_lesson(self, skill_code: str) -> Lesson | None:
+        """Начатый и не законченный блок по навыку."""
+        return self.learning.active(skill_code)
+
+    def lesson_suggestion(self, subject: Subject) -> LessonSuggestion | None:
+        """Какой блок советуем: продолжить начатый или новый по самому слабому навыку."""
+        return self.learning.suggestion(subject)
 
     # ── ИИ-помощник (Phase 6, ADR-0017) ─────────────────────────────────────
 

@@ -44,6 +44,10 @@ from ege_tutor.core.domain import (
     HintEvent,
     ImportBatch,
     ImportBatchStatus,
+    Lesson,
+    LessonStatus,
+    LessonStep,
+    LessonTaskRole,
     MasteryRecord,
     MasterySnapshot,
     Mistake,
@@ -91,6 +95,8 @@ from ege_tutor.db.models import (
     ExamSpecRow,
     HintEventRow,
     ImportBatchRow,
+    LessonAttemptRow,
+    LessonRow,
     MasteryRow,
     MasterySnapshotRow,
     MistakePatternRow,
@@ -1770,3 +1776,111 @@ class SqlRepository:
             row.finished_at = at
             s.flush()
             return self._control(row)
+
+    # ── учебный цикл (Phase 8, ADR-0022) ──
+
+    @staticmethod
+    def _lesson(row: LessonRow) -> Lesson:
+        return Lesson(
+            id=row.id,
+            subject=row.subject,
+            skill_code=row.skill_code,
+            step=row.step,
+            status=row.status,
+            started_at=row.started_at,
+            finished_at=row.finished_at,
+            mistake_skills=tuple(json.loads(row.mistake_skills_json)),
+            homework_due=row.homework_due,
+        )
+
+    def create_lesson(self, *, subject: Subject, skill_code: str, at: dt.datetime) -> Lesson:
+        with self._session.begin() as s:
+            self._ensure_subjects(s)
+            row = LessonRow(
+                subject=subject,
+                skill_code=skill_code,
+                step=LessonStep.THEORY,
+                status=LessonStatus.ACTIVE,
+                mistake_skills_json="[]",
+                started_at=at,
+            )
+            s.add(row)
+            s.flush()
+            return self._lesson(row)
+
+    def get_lesson(self, lesson_id: int) -> Lesson | None:
+        with self._session() as s:
+            row = s.get(LessonRow, lesson_id)
+            return None if row is None else self._lesson(row)
+
+    def list_lessons(
+        self,
+        skill_code: str | None = None,
+        status: LessonStatus | None = None,
+        limit: int = 50,
+    ) -> list[Lesson]:
+        query = select(LessonRow).order_by(LessonRow.started_at.desc(), LessonRow.id.desc())
+        if skill_code is not None:
+            query = query.where(LessonRow.skill_code == skill_code)
+        if status is not None:
+            query = query.where(LessonRow.status == status)
+        with self._session() as s:
+            return [self._lesson(row) for row in s.scalars(query.limit(limit))]
+
+    def update_lesson(
+        self,
+        lesson_id: int,
+        *,
+        step: LessonStep,
+        status: LessonStatus,
+        at: dt.datetime,
+        mistake_skills: Sequence[str] | None = None,
+        homework_due: dt.date | None = None,
+    ) -> Lesson:
+        with self._session.begin() as s:
+            row = s.get(LessonRow, lesson_id)
+            if row is None:
+                raise RepositoryError(f"учебный блок №{lesson_id} не найден")
+            if row.status != LessonStatus.ACTIVE:
+                raise RepositoryError(f"учебный блок №{lesson_id} уже закрыт")
+            row.step = step
+            row.status = status
+            if mistake_skills is not None:
+                row.mistake_skills_json = json.dumps(list(mistake_skills), ensure_ascii=False)
+            if homework_due is not None:
+                row.homework_due = homework_due
+            if status != LessonStatus.ACTIVE:
+                row.finished_at = at
+            s.flush()
+            return self._lesson(row)
+
+    def add_lesson_attempt(self, lesson_id: int, attempt_id: int, role: LessonTaskRole) -> None:
+        with self._session.begin() as s:
+            s.add(LessonAttemptRow(lesson_id=lesson_id, attempt_id=attempt_id, role=role))
+
+    def lesson_attempts(self, lesson_id: int) -> list[tuple[LessonTaskRole, Attempt, bool]]:
+        query = (
+            select(LessonAttemptRow, AttemptRow)
+            .join(AttemptRow, LessonAttemptRow.attempt_id == AttemptRow.id)
+            .options(selectinload(AttemptRow.task))
+            .where(LessonAttemptRow.lesson_id == lesson_id)
+            .order_by(AttemptRow.started_at, AttemptRow.id)
+        )
+        with self._session() as s:
+            return [
+                (link.role, self._attempt(attempt), link.reviewed_at is not None)
+                for link, attempt in s.execute(query)
+            ]
+
+    def mark_lesson_attempt_reviewed(self, attempt_id: int, at: dt.datetime) -> None:
+        with self._session.begin() as s:
+            row = s.get(LessonAttemptRow, attempt_id)
+            if row is None:
+                raise RepositoryError(f"попытка №{attempt_id} не из учебного блока")
+            if row.reviewed_at is None:
+                row.reviewed_at = at
+
+    def lesson_of_attempt(self, attempt_id: int) -> int | None:
+        with self._session() as s:
+            row = s.get(LessonAttemptRow, attempt_id)
+            return row.lesson_id if row else None

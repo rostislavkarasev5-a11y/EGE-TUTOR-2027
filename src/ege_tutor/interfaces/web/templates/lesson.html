@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field, ai_label with context %}
+{% block content %}
+<h1>{{ skill.title }}</h1>
+<p class="meta">Учебный блок №{{ lesson.id }} · {{ SUBJECT_NAMES[subject] }}{% if skill.exam_items %} · задание №{{ skill.exam_items|join(", ") }}{% endif %}
+  · {{ LESSON_STATUS_NAMES[lesson.status] }}</p>
+
+<ol class="steps">
+  {% for step in LESSON_STEPS if step != LessonStep.DONE %}
+  <li class="{% if step == lesson.step %}current{% elif loop.index0 < LESSON_STEPS.index(lesson.step) %}done{% endif %}">{{ LESSON_STEP_NAMES[step] }}</li>
+  {% endfor %}
+</ol>
+
+{% macro next_task(label) -%}
+<form method="post" action="/lessons/{{ lesson.id }}/next">{{ csrf_field() }}<button type="submit">{{ label }}</button></form>
+{%- endmacro %}
+
+{% if lesson.status == LessonStatus.ABANDONED %}
+<section class="card"><p>Блок брошен. Попытки и ошибки сохранены в истории.</p>
+  <p><a href="/learn/skill/{{ lesson.skill_code }}">Начать блок по этой теме заново</a></p></section>
+
+{% elif lesson.step == LessonStep.DONE %}
+<section class="card">
+  <h2>Блок пройден</h2>
+  <p>Самостоятельные: верно без подсказок {{ check.good }} из {{ check.total }}{% if check.share is not none %} ({{ (check.share * 100)|round|int }}%){% endif %}.
+    {% if check.passed %}Тема засчитана.{% else %}До нормы {{ (config.pass_share * 100)|round|int }}% не дотянули: тема вернётся в план на повторение.{% endif %}</p>
+  <p><a href="/learn">К списку тем</a></p>
+</section>
+
+{% elif lesson.step == LessonStep.THEORY %}
+<section class="card theory">
+  {% if theory %}
+  <p class="meta">{{ ai_label() }} Теорию написал ИИ своими словами, это не материал ФИПИ.</p>
+  {{ theory.text|theory_html }}
+  <p class="meta">Непонятно? На <a href="/theory/{{ lesson.skill_code }}">странице теории</a> можно попросить ИИ объяснить иначе.</p>
+  {% else %}
+  <p>Теории по этой теме пока нет. Можно сразу переходить к задачам.</p>
+  {% endif %}
+  <form method="post" action="/lessons/{{ lesson.id }}/confirm">{{ csrf_field() }}<button type="submit">Прочитал</button></form>
+</section>
+
+{% elif lesson.step == LessonStep.EXAMPLES %}
+{% if theory and theory.examples %}
+{% for ex in theory.examples %}
+<section class="card">
+  <h2>Пример {{ loop.index }}. {{ ex.title }}</h2>
+  <div class="statement">{{ ex.statement }}</div>
+  <details><summary>Сначала подумай сам, потом открой решение</summary>
+    <div class="statement">{{ ex.solution }}</div>
+    <p>Ответ: <strong>{{ ex.answer }}</strong></p>
+  </details>
+</section>
+{% endfor %}
+{% else %}
+<section class="card"><p>Разобранных примеров по этой теме пока нет.</p></section>
+{% endif %}
+<section class="card">
+  <p>Теория: <a href="/theory/{{ lesson.skill_code }}">открыть ещё раз</a>.</p>
+  <form method="post" action="/lessons/{{ lesson.id }}/confirm">{{ csrf_field() }}<button type="submit">Понял, к задачам</button></form>
+</section>
+
+{% elif lesson.step in (LessonStep.INDEPENDENT, LessonStep.MISTAKE_TASKS, LessonStep.HOMEWORK) %}
+<section class="card">
+  {% if lesson.step == LessonStep.INDEPENDENT %}
+  <h2>Самостоятельные задачи</h2>
+  <p>Реши сам. Подсказки можно брать, но задача с подсказкой не считается решённой самостоятельно.</p>
+  {% elif lesson.step == LessonStep.MISTAKE_TASKS %}
+  <h2>Задачи на ошибки</h2>
+  <p>По {{ config.mistake_tasks }} задачи на каждую тему, где были ошибки: {% for code in lesson.mistake_skills %}{{ skill_title(code) }}{% if not loop.last %}, {% endif %}{% endfor %}.</p>
+  {% else %}
+  <h2>Домашка</h2>
+  <p>{% if lesson.homework_due %}Срок: {{ lesson.homework_due.strftime("%d.%m") }}. {% endif %}Домашка стоит в плане на этот день обязательным пунктом.</p>
+  {% endif %}
+  <p>Решено {{ progress.done }} из {{ progress.target }}.
+    {% if progress.short %}<span class="meta">Проверенных задач по теме меньше, чем нужно: шаг закончится, когда они кончатся.</span>{% endif %}</p>
+  {{ next_task("Продолжить решение" if progress.open_attempt_id else "Решать") }}
+</section>
+
+{% elif lesson.step == LessonStep.CHECK %}
+<section class="card">
+  <h2>Проверка</h2>
+  <p>Верно без подсказок: <strong>{{ check.good }} из {{ check.total }}</strong>{% if check.share is not none %} ({{ (check.share * 100)|round|int }}%){% endif %}.
+    {% if check.passed %}Норма {{ (config.pass_share * 100)|round|int }}% выполнена.{% else %}Норма — {{ (config.pass_share * 100)|round|int }}%.{% endif %}</p>
+  <p>{% if check.problems %}Дальше разберём {{ check.problems|length }} ошибок.{% else %}Ошибок нет: сразу домашка.{% endif %}</p>
+  <form method="post" action="/lessons/{{ lesson.id }}/confirm">{{ csrf_field() }}<button type="submit">Дальше</button></form>
+</section>
+
+{% elif lesson.step == LessonStep.MISTAKE_REVIEW %}
+<section class="card">
+  <h2>Разбор ошибок</h2>
+  <p>Для каждой задачи открой решение, найди, где ошибся, и отметь причину на странице попытки. Потом нажми «Разобрал».</p>
+</section>
+{% for item, attempt, task in review %}
+<section class="card">
+  <h3>Задача {{ task.id }} · {% if attempt.status == AttemptStatus.GAVE_UP %}сдался{% elif not attempt.correct %}неверно (твой ответ: {{ attempt.answer }}){% else %}решено с подсказкой{% endif %}</h3>
+  <div class="statement">{{ task.statement|truncate(300) }}</div>
+  <div class="row compact">
+    <a href="/attempts/{{ attempt.id }}?reveal=1">Открыть решение и причину ошибки</a>
+    {% if item.reviewed %}<span class="meta">разобрано</span>{% else %}
+    <form method="post" action="/lessons/{{ lesson.id }}/reviewed/{{ attempt.id }}">{{ csrf_field() }}<button type="submit" class="secondary">Разобрал</button></form>
+    {% endif %}
+  </div>
+</section>
+{% endfor %}
+{% endif %}
+
+{% if lesson.status == LessonStatus.ACTIVE %}
+<details class="card">
+  <summary>Бросить блок</summary>
+  <p class="meta">Решённые задачи и ошибки останутся в истории.</p>
+  <form method="post" action="/lessons/{{ lesson.id }}/abandon">{{ csrf_field() }}<button type="submit" class="secondary">Бросить</button></form>
+</details>
+{% endif %}
+{% endblock %}

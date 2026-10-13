@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf_field with context %}
+{% block content %}
+<h1>{{ skill.title }}</h1>
+<p class="meta">{{ SUBJECT_NAMES[subject] }}{% if skill.exam_items %} · задание №{{ skill.exam_items|join(", ") }}{% endif %}</p>
+<section class="card">
+  <p>В блоке: {% if theory %}теория и {{ theory.examples|length }} разобранных примеров{% else %}теории по этой теме пока нет, начнём сразу с задач{% endif %},
+    потом {{ config.independent_tasks }} задач самостоятельно. Если верно без подсказок
+    не меньше {{ (config.pass_share * 100)|round|int }}% — тема засчитана. Ошибки разберём, дадим по
+    {{ config.mistake_tasks }} задачи на каждую тему с ошибками и домашку (до {{ config.homework_max }} задач) на завтра.</p>
+  <form method="post" action="/learn/start">{{ csrf_field() }}
+    <input type="hidden" name="skill_code" value="{{ skill.code }}">
+    <button type="submit">Начать блок</button></form>
+</section>
+{% endblock %}
