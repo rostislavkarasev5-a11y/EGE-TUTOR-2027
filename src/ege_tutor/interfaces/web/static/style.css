@@ -544,3 +544,31 @@ button.listen.failed { border-color: var(--bad); color: var(--bad); }
 .steps li.current { border-color: var(--accent); color: var(--accent); font-weight: 600; }
 .theory h3 { margin-top: 20px; }
 .theory p, .theory li { line-height: 1.6; }
+
+/* ── самопроверка части 2 (Phase 8, ADR-0022) ──────────────────────── */
+.levels { border: 0; margin: 0 0 14px; padding: 0; }
+.levels legend { margin-bottom: 10px; color: var(--muted); font-size: 14px; }
+.levels label {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line-2);
+  background: var(--card-2);
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+.levels label:has(input:checked) { border-color: var(--accent); }
+.levels input[type="radio"] {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+.levels .points { flex: 0 0 auto; font-weight: 700; color: var(--accent); white-space: nowrap; }

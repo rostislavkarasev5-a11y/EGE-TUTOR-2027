@@ -48,7 +48,7 @@ class AICallStatus(StrEnum):
 
 class Part2GradeStatus(StrEnum):
     AI_PRELIMINARY = "AI_PRELIMINARY"  # предварительная оценка ИИ
-    # SELF (самопроверка) и CONFIRMED появятся в Phase 8
+    SELF = "SELF"  # самопроверка ученика по критериям (Phase 8, ADR-0022, п. 5)
 
 
 # ── запросы: только учебные данные, без личных (ADR-0017, п. 5) ──────────────
@@ -202,7 +202,10 @@ class ChatMessage:
 
 @dataclass(frozen=True)
 class Part2Grade:
-    """Оценка развёрнутого решения. В Phase 6 — только предварительная оценка ИИ."""
+    """Оценка развёрнутого решения: предварительная оценка ИИ или самопроверка ученика.
+
+    У самопроверки solution_text пустой (решение на бумаге), criteria — выбранный уровень.
+    """
 
     id: int
     task_id: int

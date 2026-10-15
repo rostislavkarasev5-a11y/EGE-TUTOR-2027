@@ -6,7 +6,10 @@
 - подсказки 1–3 — записанные к задаче, 4 — полное решение, 5 — похожая задача
   (это уже новая попытка на другой задаче);
 - самостоятельной считается только верная попытка без подсказок;
-- ответ проверяет предметный модуль (subjects/), CORE записывает результат.
+- ответ проверяет предметный модуль (subjects/), CORE записывает результат;
+- задание части 2 в тренировке, домашке и повторении решается на бумаге и проверяется
+  самопроверкой по критериям (Phase 8, ADR-0022): ученик выбирает уровень, CORE записывает
+  балл; если есть оценка ИИ к этой попытке, в прогресс идёт меньшая из двух.
 """
 
 import datetime as dt
@@ -15,13 +18,16 @@ from dataclasses import dataclass
 
 from ege_tutor.config import MasteryConfig
 from ege_tutor.core.domain import (
+    AICriterionScore,
     AnswerCheck,
     AnswerType,
     Attempt,
     AttemptMode,
     AttemptStatus,
+    Part2GradeStatus,
     Subject,
     Task,
+    Verdict,
     VerificationStatus,
 )
 from ege_tutor.core.errors import AppError
@@ -34,6 +40,10 @@ FINISHED = (AttemptStatus.ANSWERED, AttemptStatus.GAVE_UP)
 CHAT_HINT_TEXT = "Засчитана за вопрос репетитору."
 # Режимы без подсказок: диагностика (ADR-0016). Правило обеспечивает CORE, а не интерфейс.
 NO_HINT_MODES = frozenset({AttemptMode.DIAGNOSTIC, AttemptMode.CONTROL})
+# Режимы, где задание части 2 проверяется самопроверкой (ADR-0022, п. 5). В контрольной,
+# пробнике и экзамене самооценка не годится: они измеряют результат без поблажек.
+SELF_CHECK_MODES = frozenset({AttemptMode.PRACTICE, AttemptMode.HOMEWORK, AttemptMode.REVIEW})
+SELF_CHECK_ANSWER = "самопроверка: {points} из {max_points}"
 
 
 def final_answer_type(answer: str) -> AnswerType:
@@ -87,18 +97,27 @@ class PracticeService:
     def why_not_practicable(task: Task, mode: AttemptMode = AttemptMode.PRACTICE) -> str | None:
         """Почему задачу нельзя решать, или None, если можно.
 
-        В диагностике задачу части 2 можно решать по итоговому ответу (ADR-0016).
+        Задание части 2: в диагностике — по итоговому ответу (ADR-0016); в тренировке,
+        домашке и повторении — с самопроверкой по эталонному решению (ADR-0022); в контрольной,
+        пробнике и экзамене — нельзя.
         """
-        by_final_answer = mode == AttemptMode.DIAGNOSTIC and task.answer is not None
-        if task.answer_type == AnswerType.EXTENDED and not by_final_answer:
+        extended = task.answer_type == AnswerType.EXTENDED
+        self_check = extended and mode in SELF_CHECK_MODES
+        if extended and mode == AttemptMode.DIAGNOSTIC and task.answer is None:
+            return f"у задачи №{task.id} нет итогового ответа: в диагностике её не проверить"
+        if extended and mode not in SELF_CHECK_MODES and mode != AttemptMode.DIAGNOSTIC:
             return (
-                f"задача №{task.id} с развёрнутым ответом: решение по критериям ФИПИ "
-                "появится в Phase 8"
+                f"задача №{task.id} с развёрнутым ответом: в этом режиме часть 2 не проверяется, "
+                "решай её в тренировке с самопроверкой"
             )
         if task.verification_status == VerificationStatus.UNVERIFIED:
             return f"ответ задачи №{task.id} ещё не проверен. Сначала: ege review {task.id}"
         if task.verification_status in (VerificationStatus.DISPUTED, VerificationStatus.REJECTED):
             return f"задача №{task.id} снята с выдачи (статус {task.verification_status})"
+        if self_check:
+            if not (task.solution and task.solution.strip()):
+                return f"у задачи №{task.id} нет эталонного решения: самопроверку не с чем сравнить"
+            return None
         if task.answer is None:
             return f"у задачи №{task.id} нет эталонного ответа"
         return None
@@ -119,10 +138,15 @@ class PracticeService:
         candidates = self._candidates(subject, exam_item)
         if not candidates:
             existing = self._repo.list_tasks(subject, exam_item, None, limit=100_000)
-            short = [t for t in existing if t.answer_type != AnswerType.EXTENDED]
-            waiting = [t for t in short if t.verification_status == VerificationStatus.UNVERIFIED]
-            if existing and not short:
-                raise AppError("здесь только задания с развёрнутым ответом: их решение — Phase 8")
+            waiting = [
+                t for t in existing if t.verification_status == VerificationStatus.UNVERIFIED
+            ]
+            extended = [t for t in existing if t.answer_type == AnswerType.EXTENDED]
+            if existing and len(extended) == len(existing) and not waiting:
+                raise AppError(
+                    "здесь только задания с развёрнутым ответом без эталонного решения: "
+                    "самопроверку не с чем сравнить. Добавь задачи с решением"
+                )
             if waiting:
                 raise AppError(
                     f"нет проверенных задач. Непроверенных: {len(waiting)} — "
@@ -250,6 +274,11 @@ class PracticeService:
         if not answer.strip():
             raise AppError("пустой ответ")
         task = self._task(attempt.task_id)
+        if task.answer_type == AnswerType.EXTENDED and attempt.mode != AttemptMode.DIAGNOSTIC:
+            raise AppError(
+                "задание части 2 проверяется самопроверкой: сравни решение с эталоном "
+                "и выбери уровень по критериям"
+            )
         assert task.answer is not None  # гарантирует start()
         tutor = self._tutor_for(task.subject)
         if task.answer_type == AnswerType.EXTENDED:
@@ -268,6 +297,68 @@ class PracticeService:
             verdict=check.verdict,
         )
         return AttemptResult(finished, check, task)
+
+    def self_check_attempt(self, attempt_id: int) -> tuple[Attempt, Task]:
+        """Открытая попытка на задание части 2, которую можно проверить самопроверкой."""
+        attempt = self._open_attempt(attempt_id)
+        task = self._task(attempt.task_id)
+        if task.answer_type != AnswerType.EXTENDED:
+            raise AppError("самопроверка — только для заданий с развёрнутым ответом")
+        if attempt.mode not in SELF_CHECK_MODES:
+            raise AppError("в этом режиме самопроверки нет")
+        return attempt, task
+
+    def self_grade(
+        self, attempt_id: int, points: int, max_points: int, level_text: str
+    ) -> AttemptResult:
+        """Записать самопроверку части 2 и завершить попытку.
+
+        Балл попытки — самооценка, а если к попытке есть оценка ИИ, — меньшая из двух
+        (ADR-0022, п. 5). Полный балл — верно, иначе — неверно. Оценка SELF записывается
+        отдельной строкой, рядом с оценкой ИИ. Эталонное решение при самопроверке видно,
+        но это не подсказка: уровень подсказки не меняется.
+        """
+        attempt, task = self.self_check_attempt(attempt_id)
+        if not 0 <= points <= max_points:
+            raise AppError(f"балл должен быть от 0 до {max_points}")
+        now = self._clock.now()
+        ai_grades = [
+            g
+            for g in self._repo.list_part2_grades(attempt_id=attempt.id)
+            if g.status == Part2GradeStatus.AI_PRELIMINARY
+        ]
+        counted = min(points, ai_grades[0].points) if ai_grades else points
+        self._repo.add_part2_grade(
+            task_id=task.id,
+            solution_text="",
+            points=points,
+            max_points=max_points,
+            criteria=(AICriterionScore(level_text, points, max_points, "самопроверка"),),
+            summary=level_text,
+            status=Part2GradeStatus.SELF,
+            at=now,
+            attempt_id=attempt.id,
+        )
+        verdict = Verdict.CORRECT if counted == max_points else Verdict.WRONG
+        answer = SELF_CHECK_ANSWER.format(points=points, max_points=max_points)
+        finished = self._repo.finish_attempt(
+            attempt.id,
+            status=AttemptStatus.ANSWERED,
+            at=now,
+            answer=answer,
+            answer_normalized=answer,
+            verdict=verdict,
+            points=counted,
+            max_points=max_points,
+        )
+        if counted < points:
+            note = (
+                f"Самооценка {points} из {max_points}, оценка ИИ {counted} из {max_points}: "
+                f"в прогресс идёт меньшая — {counted} из {max_points}."
+            )
+        else:
+            note = f"В прогресс идёт {counted} из {max_points}."
+        return AttemptResult(finished, AnswerCheck(verdict, answer, note), task)
 
     def give_up(self, attempt_id: int) -> Attempt:
         attempt = self._open_attempt(attempt_id)

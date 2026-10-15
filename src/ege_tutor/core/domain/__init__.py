@@ -40,6 +40,7 @@ from ege_tutor.core.domain.code import (
     TaskTestCase,
 )
 from ege_tutor.core.domain.content import TaskSource, VerificationStatus
+from ege_tutor.core.domain.criteria import CriterionLevel, Part2Criteria, generic_criteria
 from ege_tutor.core.domain.diagnostics import (
     ITEM_BASIS_NAMES,
     STOP_REASON_NAMES,
@@ -181,6 +182,7 @@ __all__ = [
     "ControlSession",
     "ControlStatus",
     "ControlTaskResult",
+    "CriterionLevel",
     "DailyCheckin",
     "DailyPlan",
     "DayBudget",
@@ -218,6 +220,7 @@ __all__ = [
     "MistakeCategory",
     "MistakeDraft",
     "MistakePattern",
+    "Part2Criteria",
     "Part2Grade",
     "Part2GradeStatus",
     "PlanItem",
@@ -243,4 +246,5 @@ __all__ = [
     "Topic",
     "Verdict",
     "VerificationStatus",
+    "generic_criteria",
 ]

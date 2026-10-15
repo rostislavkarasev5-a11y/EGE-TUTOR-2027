@@ -57,6 +57,7 @@ from ege_tutor.core.domain import (
     VerificationStatus,
 )
 from ege_tutor.core.services.catalog import CatalogError
+from ege_tutor.core.services.criteria import CriteriaError
 
 SUBJECT_NAMES = {
     Subject.MATH_PROFILE: "Математика (профиль)",
@@ -125,6 +126,8 @@ def _tutor() -> TutorApp:
         raise _fail(f"конфигурация: {e}") from e
     except CatalogError as e:
         raise _fail(f"каталог тем: {e}") from e
+    except CriteriaError as e:
+        raise _fail(f"критерии части 2: {e}") from e
 
 
 def _subject(text: str | None) -> Subject | None:
@@ -534,6 +537,12 @@ def _show_task_for_solving(tutor: TutorApp, t: Task, attempt: Attempt) -> None:
         console.print(
             f"[yellow]Подсказки из прошлой попытки учтены (уровень {attempt.max_hint_level}).[/]"
         )
+    if tutor.is_self_check(attempt.id):
+        console.print(
+            "[dim]Это задание части 2: реши его на бумаге. Enter — проверить себя "
+            "(эталон и критерии), ? — подсказка, сдаюсь — показать решение, выход — закончить.[/]"
+        )
+        return
     console.print(
         "[dim]Введи ответ. Команды: ? — подсказка, сдаюсь — показать ответ, "
         "похожая — другая задача того же номера, выход — закончить.[/]"
@@ -614,6 +623,8 @@ def _solve_one(
             raise _fail(str(e)) from e
         started = None
         _show_task_for_solving(tutor, t, attempt)
+        if tutor.is_self_check(attempt.id):
+            return _self_check_one(tutor, t, attempt)
         while True:
             try:
                 text = typer.prompt("Ответ", prompt_suffix=": ").strip()
@@ -672,6 +683,88 @@ def _solve_one(
                 break
             _show_answer(t)
             return "next", None
+
+
+def _show_hint(tutor: TutorApp, attempt_id: int) -> None:
+    try:
+        hint = tutor.next_hint(attempt_id)
+    except AppError as e:
+        console.print(f"[yellow]{e}[/]")
+        return
+    title = f"Уровень {hint.level}: {HINT_NAMES[hint.level]}"
+    console.print(_panel(hint.text, title=title, title_align="left"))
+    console.print(f"[dim]Самостоятельность этой попытки теперь {hint.independence}.[/]")
+
+
+def _ask_points(max_points: int) -> int | None:
+    """Балл по критериям; None — ученик прервал ввод."""
+    while True:
+        try:
+            text = typer.prompt(f"Сколько баллов (0–{max_points})", prompt_suffix=": ").strip()
+        except (typer.Abort, EOFError, KeyboardInterrupt):
+            return None
+        if text.isdigit() and 0 <= int(text) <= max_points:
+            return int(text)
+        console.print(f"Введи целое число от 0 до {max_points}.")
+
+
+def _self_check_one(tutor: TutorApp, t: Task, attempt: Attempt) -> tuple[str, Task | None]:
+    """Задание части 2: решить на бумаге, сравнить с эталоном и выбрать уровень критериев."""
+    while True:
+        try:
+            text = typer.prompt(
+                "Решил? Enter — проверить себя", default="", show_default=False, prompt_suffix=": "
+            ).strip()
+        except (typer.Abort, EOFError, KeyboardInterrupt):
+            tutor.abandon_attempt(attempt.id)
+            console.print("\nПопытка прервана, она сохранена как брошенная.")
+            return "exit", None
+        command = text.casefold()
+        if command in HINT_WORDS:
+            _show_hint(tutor, attempt.id)
+            continue
+        if command in EXIT_WORDS:
+            tutor.abandon_attempt(attempt.id)
+            return "exit", None
+        if command in GIVE_UP_WORDS:
+            tutor.give_up(attempt.id)
+            _show_answer(t)
+            _report_mistakes(tutor, attempt.id)
+            return "next", None
+        break
+    check = tutor.self_check(attempt.id)
+    criteria = check.criteria
+    console.print(_panel(Text(t.solution or ""), title="Эталонное решение", title_align="left"))
+    if t.answer:
+        console.print(f"Итоговый ответ: [bold]{_display_answer(t)}[/]")
+    console.print(
+        f"[bold]Критерии задания №{t.exam_item}[/] — выбери один уровень, самый высокий, "
+        "которому решение соответствует полностью:"
+    )
+    for level in criteria.levels:
+        console.print(f"  [bold]{level.points}[/] — {escape(level.text)}")
+    for tip in criteria.tips:
+        console.print(f"[dim]• {escape(tip)}[/]")
+    if criteria.generic:
+        console.print(f"[dim]{escape(criteria.note)}[/]")
+    else:
+        console.print("[dim]Критерии — пересказ своими словами, а не официальный текст ФИПИ.[/]")
+    for grade in check.ai_grades[:1]:
+        console.print(f"Оценка ИИ: {grade.points} из {grade.max_points} · {AI_LABEL}")
+    points = _ask_points(criteria.max_points)
+    if points is None:
+        tutor.abandon_attempt(attempt.id)
+        console.print("\nПопытка прервана, она сохранена как брошенная.")
+        return "exit", None
+    try:
+        result = tutor.self_grade(attempt.id, points)
+    except AppError as e:
+        raise _fail(str(e)) from e
+    done = result.attempt
+    console.print(f"Итог: [bold]{done.points} из {done.max_points} баллов[/]")
+    console.print(result.check.explanation)
+    _report_mistakes(tutor, attempt.id)
+    return "next", None
 
 
 def _report_mistakes(tutor: TutorApp, attempt_id: int) -> None:
@@ -799,6 +892,8 @@ def attempts(
     table.add_column("Время / норматив")
     for a in found:
         result = VERDICT_NAMES[a.verdict] if a.verdict else ATTEMPT_STATUS_NAMES[a.status]
+        if a.self_checked:
+            result = f"{a.points} из {a.max_points} б."
         table.add_row(
             str(a.id),
             a.started_at.strftime("%Y-%m-%d %H:%M"),

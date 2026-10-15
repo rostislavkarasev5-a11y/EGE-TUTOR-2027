@@ -64,7 +64,7 @@ def test_text_ignores_case_and_spaces():
 
 
 def test_extended_is_not_checked_here():
-    with pytest.raises(ValueError, match="Phase 8"):
+    with pytest.raises(ValueError, match="самопроверкой"):
         math.check_answer(AnswerType.EXTENDED, "1", "1")
 
 

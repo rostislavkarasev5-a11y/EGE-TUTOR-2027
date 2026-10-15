@@ -330,6 +330,9 @@ class AttemptRow(Base):
     verdict: Mapped[Verdict | None] = mapped_column(_enum(Verdict))
     max_hint_level: Mapped[int] = mapped_column(default=0)
     time_norm_seconds: Mapped[int | None] = mapped_column(Integer)
+    # Балл части 2 после самопроверки (Phase 8): меньшая из самооценки и оценки ИИ.
+    points: Mapped[int | None] = mapped_column(Integer)
+    max_points: Mapped[int | None] = mapped_column(Integer)
 
     task: Mapped[TaskRow] = relationship()
 
@@ -577,7 +580,7 @@ class ChatMessageRow(Base):
 
 
 class Part2GradeRow(Base):
-    """Оценка развёрнутого решения части 2. В Phase 6 — только предварительная оценка ИИ."""
+    """Оценка решения части 2: предварительная ИИ (Phase 6) или самопроверка (Phase 8)."""
 
     __tablename__ = "part2_grade"
     __table_args__ = (

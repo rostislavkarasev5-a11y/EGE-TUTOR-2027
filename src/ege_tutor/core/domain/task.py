@@ -93,13 +93,28 @@ class Task:
     tests: tuple[TaskTestCase, ...] = ()
 
     @property
-    def can_practice(self) -> bool:
-        """Задачу можно решать: ответ проверен и он краткий (часть 2 — с Phase 8)."""
+    def auto_checkable(self) -> bool:
+        """Ответ проверяет программа: он краткий и проверен (контрольная берёт только такие)."""
         return (
             self.verification_status in PRACTICE_STATUSES
             and self.answer_type != AnswerType.EXTENDED
             and self.answer is not None
         )
+
+    @property
+    def self_checkable(self) -> bool:
+        """Задание части 2 можно решать с самопроверкой: есть проверенное эталонное решение."""
+        return (
+            self.verification_status in PRACTICE_STATUSES
+            and self.answer_type == AnswerType.EXTENDED
+            and bool(self.solution and self.solution.strip())
+        )
+
+    @property
+    def can_practice(self) -> bool:
+        """Задачу можно решать в тренировке: краткий ответ проверит программа, часть 2 —
+        самопроверка по критериям (Phase 8, ADR-0022)."""
+        return self.auto_checkable or self.self_checkable
 
     @property
     def source_label(self) -> str:

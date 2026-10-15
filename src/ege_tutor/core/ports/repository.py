@@ -182,6 +182,8 @@ class Repository(Protocol):
         answer: str | None = None,
         answer_normalized: str | None = None,
         verdict: Verdict | None = None,
+        points: int | None = None,
+        max_points: int | None = None,
     ) -> Attempt: ...
 
     def abandon_in_progress(self, at: dt.datetime) -> int: ...
@@ -400,8 +402,10 @@ class Repository(Protocol):
         attempt_id: int | None = None,
     ) -> Part2Grade: ...
 
-    def list_part2_grades(self, task_id: int | None = None, limit: int = 50) -> list[Part2Grade]:
-        """Оценки решений части 2, новые первыми."""
+    def list_part2_grades(
+        self, task_id: int | None = None, limit: int = 50, attempt_id: int | None = None
+    ) -> list[Part2Grade]:
+        """Оценки решений части 2, новые первыми (attempt_id — только оценки этой попытки)."""
         ...
 
     def get_part2_grade(self, grade_id: int) -> Part2Grade | None: ...

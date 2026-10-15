@@ -5,6 +5,9 @@
 
 Свидетельство попытки:  e = правильность × самостоятельность × фактор_времени × фактор_повтора
 Вес свидетельства:      w = вес_сложности × вес_режима
+
+Часть 2 с самопроверкой (Phase 8, ADR-0022): правильность = балл / максимум (частичный балл),
+а w дополнительно умножается на part2.self_grade_weight.
 """
 
 import datetime as dt
@@ -92,7 +95,8 @@ class MasteryModelV0:
         return getattr(self.config.mode_weight, mode.value.lower())
 
     def evidence(self, attempt: Attempt, difficulty: int | None) -> tuple[float, float]:
-        correctness = 1.0 if attempt.correct else 0.0
+        # у части 2 после самопроверки — доля балла, иначе 1 (верно) или 0
+        correctness = attempt.score_share
         independence = self.config.independence.for_hint_level(min(attempt.max_hint_level, 4))
         e = (
             correctness
@@ -101,6 +105,8 @@ class MasteryModelV0:
             * self._repeat_factor(attempt.attempt_no)
         )
         w = self._difficulty_weight(difficulty) * self._mode_weight(attempt.mode)
+        if attempt.self_checked:
+            w *= self.config.part2.self_grade_weight
         return e, w
 
     # ── навык ──

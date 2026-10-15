@@ -139,12 +139,17 @@
 
 
   {% if attempt.status == AttemptStatus.IN_PROGRESS %}
+  {% if self_check %}
+  <p>Реши на бумаге, затем нажми «Проверить себя»: откроется эталонное решение и критерии оценки.</p>
+  <form method="get" action="/attempts/{{ attempt.id }}/self-check" class="row"><button type="submit">Проверить себя</button></form>
+  {% else %}
   <form method="post" action="/attempts/{{ attempt.id }}/answer" class="row">
     {{ csrf_field() }}
     <input type="text" name="answer" autocomplete="off" autocapitalize="off" spellcheck="false"
       placeholder="Ответ, например 0,4" required autofocus>
     <button type="submit">{% if strict %}Ответить{% else %}Проверить{% endif %}</button>
   </form>
+  {% endif %}
   {% if strict %}
   <div class="row actions">
     <form method="post" action="/attempts/{{ attempt.id }}/give-up">{{ csrf_field() }}<button class="secondary" type="submit">Не знаю</button></form>
@@ -171,11 +176,30 @@
     <form method="post" action="/attempts/{{ attempt.id }}/similar">{{ csrf_field() }}<button class="secondary" type="submit">Похожая задача</button></form>
     <form method="post" action="/attempts/{{ attempt.id }}/abandon">{{ csrf_field() }}<button class="link" type="submit">Выйти</button></form>
   </div>
+  {% if self_check %}
+  <p class="meta">Подсказка уровня 4 — это полное решение: она снижает самостоятельность. Эталон при самопроверке — не снижает.</p>
+  {% else %}
   <p class="meta">Ответ пиши как на бланке ЕГЭ: целое число или десятичная дробь через запятую.</p>
+  {% endif %}
   {% endif %}
   {% if code_enabled %}{{ code_block() }}{% endif %}
   {% else %}
-    {% if attempt.status == AttemptStatus.ANSWERED %}
+    {% if attempt.status == AttemptStatus.ANSWERED and attempt.self_checked %}
+    {% set own = part2_grades|selectattr("status.value", "equalto", "SELF")|first %}
+    {% set by_ai = part2_grades|selectattr("status.value", "equalto", "AI_PRELIMINARY")|first %}
+    <p class="result verdict-{{ attempt.verdict|lower }}">{{ attempt.points }} из {{ attempt.max_points }} баллов</p>
+    {% if own %}<p>Самопроверка: {{ own.points }} из {{ own.max_points }} — {{ own.summary }}</p>{% endif %}
+    {% if by_ai %}
+    <div class="ai-box">
+      <p>{{ ai_label() }} Оценка ИИ: {{ by_ai.points }} из {{ by_ai.max_points }} — {{ by_ai.summary }}
+        <a href="/grades/{{ by_ai.id }}">подробно</a></p>
+    </div>
+    <p>В прогресс идёт меньшая из двух оценок: <strong>{{ attempt.points }} из {{ attempt.max_points }}</strong>.</p>
+    {% else %}
+    <p>В прогресс идёт самооценка: <strong>{{ attempt.points }} из {{ attempt.max_points }}</strong>.</p>
+    {% endif %}
+    {{ mistake_note() }}
+    {% elif attempt.status == AttemptStatus.ANSWERED %}
     <p class="result verdict-{{ attempt.verdict|lower }}">Итог: {{ VERDICT_NAMES[attempt.verdict] }}
       <span class="meta">(твой ответ: {{ attempt.answer }})</span></p>
     {% if explanation %}<p>{{ explanation }}</p>{% endif %}

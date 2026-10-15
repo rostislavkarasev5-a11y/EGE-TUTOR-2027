@@ -1016,3 +1016,60 @@ def test_import_reshu_variant_page_is_explained(client):
     )
     response = _preview(client, "variant.html", page.encode())
     assert "страница самого варианта" in response.text
+
+
+# ── самопроверка части 2 (Phase 8, ADR-0022) ────────────────────────────────
+
+SELF_CHECK_TASKS = """
+defaults:
+  subject: math
+  source: USER_MATERIAL
+  source_ref: "тест"
+  verification_status: REVIEWED
+tasks:
+  - exam_item: 14
+    statement: "Решите тригонометрическое уравнение и отберите корни."
+    solution: "Эталон: замена t = sin x, серии, отбор на окружности."
+    skills: [M13.root_selection]
+"""
+
+
+def test_self_check_on_site_without_ai(client, tutor, write_file):
+    tutor.import_tasks(write_file("p2.yaml", SELF_CHECK_TASKS))
+    task_id = tutor.tasks(exam_item=14)[0].id
+    attempt_id = _start(client, task_id)
+    page = client.get(f"/attempts/{attempt_id}")
+    assert "Реши на бумаге" in page.text and "Проверить себя" in page.text
+    assert 'name="answer"' not in page.text
+    check = client.get(f"/attempts/{attempt_id}/self-check")
+    assert "Эталон: замена t = sin x" in check.text
+    criteria = tutor.part2_criteria(task_id)
+    assert check.text.count('type="radio" name="points"') == criteria.max_points + 1
+    assert "пересказ" in check.text
+    assert "Проверка ИИ" not in check.text  # без ИИ раздела нет
+    assert tutor.attempt(int(attempt_id)).max_hint_level == 0
+    empty = post(client, f"/attempts/{attempt_id}/self-grade", {})
+    assert "выбери один уровень" in empty.text
+    done = post(client, f"/attempts/{attempt_id}/self-grade", {"points": "1"})
+    assert f"1 из {criteria.max_points} баллов" in done.text
+    assert "В прогресс идёт самооценка" in done.text
+    assert "Следующая задача" in done.text
+    assert 'style="' not in check.text + done.text
+    again = client.get(f"/attempts/{attempt_id}/self-check")
+    assert "уже завершена" in again.text
+
+
+def test_self_check_with_ai_grade(ai_client, write_file):
+    client, app, _ = ai_client
+    app.import_tasks(write_file("p2.yaml", SELF_CHECK_TASKS))
+    task_id = next(t.id for t in app.tasks(exam_item=14) if t.self_checkable)
+    attempt_id = _start(client, task_id)
+    check = client.get(f"/attempts/{attempt_id}/self-check")
+    assert "Проверка ИИ" in check.text
+    graded = post(
+        client, f"/attempts/{attempt_id}/part2", {"solution": "Подробное решение с отбором."}
+    )
+    assert "Оценка ИИ: <strong>2 из 2</strong>" in graded.text
+    done = post(client, f"/attempts/{attempt_id}/self-grade", {"points": "1"})
+    assert "ИИ, предварительно" in done.text
+    assert "меньшая из двух" in done.text and "1 из 2 баллов" in done.text

@@ -51,7 +51,9 @@ from ege_tutor.core.domain import (
     Mistake,
     MistakeCategory,
     MistakePattern,
+    Part2Criteria,
     Part2Grade,
+    Part2GradeStatus,
     PlanItem,
     PlanItemKind,
     ReviewItem,
@@ -83,6 +85,7 @@ from ege_tutor.core.services.catalog import load_catalog
 from ege_tutor.core.services.code import CodeService
 from ege_tutor.core.services.content_import import build_report
 from ege_tutor.core.services.control import ControlService, ControlStep
+from ege_tutor.core.services.criteria import CriteriaLibrary, load_criteria
 from ege_tutor.core.services.diagnostics import DiagnosticsService
 from ege_tutor.core.services.learning import LessonService, LessonSources
 from ege_tutor.core.services.mastery import Calibration, MasteryService
@@ -136,6 +139,16 @@ class ImportResult:
 
 
 @dataclass(frozen=True)
+class SelfCheck:
+    """Самопроверка части 2: эталонное решение, критерии и оценки ИИ к этой попытке."""
+
+    attempt: Attempt
+    task: Task
+    criteria: Part2Criteria
+    ai_grades: tuple[Part2Grade, ...]  # предварительные оценки ИИ к попытке, новые первыми
+
+
+@dataclass(frozen=True)
 class DiagnosticStep:
     """Следующий шаг диагностики: задача для решения или итог."""
 
@@ -157,10 +170,15 @@ class TutorApp:
         theory: TheoryLibrary | None = None,
         remote_files: RemoteFiles | None = None,
         reshu_maps: dict[Subject, SubsectionMap] | None = None,
+        criteria: CriteriaLibrary | None = None,
     ) -> None:
         self.settings = settings
         self.remote_files = remote_files or _NoRemoteFiles()
         self.reshu_maps = reshu_maps or {}
+        # Критерии самопроверки части 2 (ADR-0022, п. 5); без файла — общий список уровней.
+        self.criteria = (
+            criteria if criteria is not None else load_criteria(settings.content_dir, catalog)
+        )
         self.clock = clock
         self.ai = ai
         self.sandbox = sandbox
@@ -262,6 +280,7 @@ class TutorApp:
             theory=theory,
             remote_files=remote_files or SdamgiaFiles(),
             reshu_maps=load_subsection_maps(settings.content_dir),
+            criteria=load_criteria(settings.content_dir, catalog),
         )
 
     def close(self) -> None:
@@ -462,17 +481,66 @@ class TutorApp:
     def next_hint(self, attempt_id: int) -> ShownHint:
         return self.practice.next_hint(attempt_id)
 
+    def _after_finish(self, attempt: Attempt, task: Task) -> None:
+        """Попытка завершена: факт, ошибки и mastery, затем шаг учебного блока."""
+        self.mastery.on_attempt_finished(attempt, task)
+        self.learning.after_attempt(attempt.id)
+
     def submit_answer(self, attempt_id: int, answer: str) -> AttemptResult:
         result = self.practice.submit(attempt_id, answer)
-        self.mastery.on_attempt_finished(result.attempt, result.task)
-        self.learning.after_attempt(attempt_id)
+        self._after_finish(result.attempt, result.task)
         return result
 
     def give_up(self, attempt_id: int) -> Attempt:
         attempt = self.practice.give_up(attempt_id)
-        self.mastery.on_attempt_finished(attempt, self.task(attempt.task_id))
-        self.learning.after_attempt(attempt_id)
+        self._after_finish(attempt, self.task(attempt.task_id))
         return attempt
+
+    # ── самопроверка части 2 (Phase 8, ADR-0022, п. 5) ──────────────────────
+
+    def part2_criteria(self, task: Task | int) -> Part2Criteria:
+        """Критерии задания части 2 (задача или её номер в базе)."""
+        found = task if isinstance(task, Task) else self.task(task)
+        criteria = self.criteria.get(found.subject, found.exam_item)
+        if criteria is None:
+            raise AppError(f"у задания №{found.exam_item} краткий ответ: критериев нет")
+        return criteria
+
+    def is_self_check(self, attempt_id: int) -> bool:
+        """Эту попытку проверяет самопроверка (часть 2 в тренировке, домашке, повторении)."""
+        try:
+            self.practice.self_check_attempt(attempt_id)
+        except AppError:
+            return False
+        return True
+
+    def self_check(self, attempt_id: int) -> SelfCheck:
+        """Что показать при самопроверке: эталон, уровни критериев, оценки ИИ к попытке.
+
+        Эталонное решение здесь — не подсказка: уровень подсказки попытки не меняется.
+        """
+        attempt, task = self.practice.self_check_attempt(attempt_id)
+        ai_grades = tuple(
+            g
+            for g in self.assistant.part2_grades(attempt_id=attempt.id)
+            if g.status == Part2GradeStatus.AI_PRELIMINARY
+        )
+        return SelfCheck(attempt, task, self.part2_criteria(task), ai_grades)
+
+    def self_grade(self, attempt_id: int, points: int) -> AttemptResult:
+        """Ученик выбрал уровень критериев: записать балл и завершить попытку как submit."""
+        _, task = self.practice.self_check_attempt(attempt_id)
+        criteria = self.part2_criteria(task)
+        level = criteria.level(points)
+        if level is None:
+            raise AppError(f"балл должен быть от 0 до {criteria.max_points}")
+        result = self.practice.self_grade(attempt_id, points, criteria.max_points, level.text)
+        self._after_finish(result.attempt, result.task)
+        return result
+
+    def attempt_part2_grades(self, attempt_id: int) -> list[Part2Grade]:
+        """Оценки части 2 к попытке: самопроверка и ИИ, новые первыми."""
+        return self.assistant.part2_grades(attempt_id=attempt_id)
 
     def abandon_attempt(self, attempt_id: int) -> Attempt:
         return self.practice.abandon(attempt_id)
@@ -906,8 +974,11 @@ class TutorApp:
     def ai_mistake_note(self, mistake_id: int) -> AINote | None:
         return self.assistant.mistake_note(mistake_id)
 
-    def ai_grade_part2(self, task_id: int, solution_text: str) -> Part2Grade:
-        return self.assistant.grade_part2(task_id, solution_text)
+    def ai_grade_part2(
+        self, task_id: int, solution_text: str, attempt_id: int | None = None
+    ) -> Part2Grade:
+        """Предварительная оценка ИИ; с attempt_id — к идущей попытке, до самопроверки."""
+        return self.assistant.grade_part2(task_id, solution_text, attempt_id)
 
     def part2_grades(self, task_id: int | None = None) -> list[Part2Grade]:
         return self.assistant.part2_grades(task_id)

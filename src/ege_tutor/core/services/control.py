@@ -9,6 +9,7 @@ from dataclasses import dataclass
 
 from ege_tutor.config import PlannerControl
 from ege_tutor.core.domain import (
+    AnswerKind,
     Attempt,
     AttemptStatus,
     Catalog,
@@ -41,7 +42,10 @@ class ControlService:
         self._catalog = catalog
 
     def eligible_tasks(self, subject: Subject, exam_item: int) -> list[Task]:
-        """Проверенные задачи номера, которые ученик не решал последние fresh_days дней."""
+        """Проверенные задачи номера, которые ученик не решал последние fresh_days дней.
+
+        Только с кратким ответом: самопроверка части 2 — не замер «я это знаю».
+        """
         now = self._clock.now()
         recent = {
             a.task_id
@@ -52,15 +56,21 @@ class ControlService:
         tasks = [
             t
             for t in self._repo.list_tasks(subject, exam_item, None, limit=100_000)
-            if t.can_practice and t.id not in recent
+            if t.auto_checkable and t.id not in recent
         ]
         # Разные сложности: сначала по сложности, внутри — по номеру (детерминированно).
         return sorted(tasks, key=lambda t: (t.difficulty or 3, t.id))
 
     def why_unavailable(self, subject: Subject, exam_item: int) -> str | None:
         spec = self._catalog.specs.get(subject)
-        if spec is None or spec.item(exam_item) is None:
+        item = spec.item(exam_item) if spec else None
+        if item is None:
             return f"в экзамене нет задания №{exam_item}"
+        if item.answer_kind == AnswerKind.EXTENDED:
+            return (
+                f"№{exam_item} — задание с развёрнутым ответом: контрольной по нему нет, "
+                "решай его в тренировке с самопроверкой по критериям"
+            )
         count = len(self.eligible_tasks(subject, exam_item))
         if count < self.config.min_tasks:
             return (

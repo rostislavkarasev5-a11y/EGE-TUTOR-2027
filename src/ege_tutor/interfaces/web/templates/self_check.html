@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "macros.html" import statement, csrf_field, ai_label with context %}
+{% block content %}
+{% if lesson %}
+<p class="flash info">Учебный блок «{{ skill_title(lesson.skill_code) }}» · {{ lesson.step_name }} ·
+  <a href="/lessons/{{ lesson.id }}">к блоку</a></p>
+{% endif %}
+{{ statement(task) }}
+
+<section class="card answer" id="solution">
+  <h2>Эталонное решение</h2>
+  <div class="statement">{{ task.solution }}</div>
+  {% if task.answer %}<p>Итоговый ответ: <strong>{{ task|display_answer }}</strong></p>{% endif %}
+  <p class="meta">Сравни своё решение на бумаге с эталоном. Это не подсказка: самостоятельность попытки не меняется.</p>
+</section>
+
+<section class="card" id="criteria">
+  <h2>Проверь себя: задание №{{ task.exam_item }}, до {{ criteria.max_points }} баллов</h2>
+  <form method="post" action="/attempts/{{ attempt.id }}/self-grade">
+    {{ csrf_field() }}
+    <fieldset class="levels">
+      <legend>Выбери один уровень — самый высокий, которому решение соответствует полностью.</legend>
+      {% for level in criteria.levels %}
+      <label><input type="radio" name="points" value="{{ level.points }}" required>
+        <span class="points">{{ level.points }} б.</span><span>{{ level.text }}</span></label>
+      {% endfor %}
+    </fieldset>
+    <button type="submit">Записать балл</button>
+  </form>
+  {% if criteria.tips %}
+  <h3>На что смотреть</h3>
+  <ul>
+    {% for tip in criteria.tips %}<li>{{ tip }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <p class="meta">{% if criteria.generic %}{{ criteria.note }}{% else %}Критерии — пересказ своими словами, а не официальный текст ФИПИ.{% if criteria.note %} {{ criteria.note }}.{% endif %}{% endif %}</p>
+  <p><a href="/attempts/{{ attempt.id }}">Вернуться к задаче</a></p>
+</section>
+
+{% if ai_allowed and ai.available %}
+<section class="card" id="ai">
+  <h2>Проверка ИИ {{ ai_label() }}</h2>
+  {% for g in ai_grades %}
+  <div class="ai-box">
+    <p>{{ ai_label() }} Оценка ИИ: <strong>{{ g.points }} из {{ g.max_points }}</strong> — {{ g.summary }}
+      <a href="/grades/{{ g.id }}">подробно</a></p>
+  </div>
+  {% endfor %}
+  <p class="meta">Необязательно. Перепиши решение текстом (формулы — как x^2, sqrt(3)), и ИИ оценит его по критериям.
+    Если оценка ИИ ниже твоей, в прогресс пойдёт меньшая.</p>
+  <form method="post" action="/attempts/{{ attempt.id }}/part2">
+    {{ csrf_field() }}
+    <textarea name="solution" class="solution" required minlength="20" maxlength="10000"></textarea>
+    <button type="submit" class="secondary">Оценить решение (ИИ)</button>
+  </form>
+</section>
+{% endif %}
+{% endblock %}

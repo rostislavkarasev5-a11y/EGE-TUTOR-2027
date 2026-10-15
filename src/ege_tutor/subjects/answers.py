@@ -117,4 +117,4 @@ def check_short_answer(
         return check_text(expected, given)
     if answer_type == AnswerType.SEQUENCE:
         return check_sequence(expected, given)
-    raise ValueError("развёрнутый ответ проверяется по критериям (Phase 8)")
+    raise ValueError("развёрнутый ответ проверяется самопроверкой по критериям")

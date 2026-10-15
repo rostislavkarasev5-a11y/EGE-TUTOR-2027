@@ -62,10 +62,26 @@ class Attempt:
     verdict: Verdict | None
     max_hint_level: int  # 0 — без подсказок; 4 — видел полное решение
     time_norm_seconds: int | None
+    # Балл за задание части 2 после самопроверки (Phase 8, ADR-0022). Если есть и оценка ИИ,
+    # здесь меньшая из двух. Для кратких ответов — None: там правильность 1 или 0.
+    points: int | None = None
+    max_points: int | None = None
 
     @property
     def correct(self) -> bool:
         return self.verdict == Verdict.CORRECT
+
+    @property
+    def self_checked(self) -> bool:
+        """Балл получен самопроверкой части 2."""
+        return self.points is not None and self.max_points is not None
+
+    @property
+    def score_share(self) -> float:
+        """Доля балла: points / max_points у части 2, иначе 1 (верно) или 0."""
+        if self.points is not None and self.max_points:
+            return self.points / self.max_points
+        return 1.0 if self.correct else 0.0
 
     @property
     def independent(self) -> bool:

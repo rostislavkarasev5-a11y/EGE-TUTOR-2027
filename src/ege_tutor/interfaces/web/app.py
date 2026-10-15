@@ -1175,9 +1175,12 @@ def create_app(
         ai_allowed = session_id is None and control is None and core.ai_allowed_for(attempt_id)
         chat = core.chat_messages(attempt_id) if ai_allowed else []
         speak = request.session.pop("speak_next", None)
+        extended = task.answer_type == AnswerType.EXTENDED
         return render(
             request,
             "attempt.html",
+            self_check=extended and core.is_self_check(attempt_id),
+            part2_grades=core.attempt_part2_grades(attempt_id) if extended else [],
             ai=ai,
             ai_allowed=ai_allowed,
             chat=chat,
@@ -1196,7 +1199,10 @@ def create_app(
             task=task,
             hints=hints,
             explanation=notes.get(str(attempt_id), ""),
-            reveal=reveal or attempt.status == AttemptStatus.GAVE_UP or attempt.correct,
+            reveal=reveal
+            or attempt.status == AttemptStatus.GAVE_UP
+            or attempt.correct
+            or attempt.self_checked,
             started_iso=attempt.started_at.isoformat(),
             filter_subject=subject,
             filter_item=item,
@@ -1244,6 +1250,58 @@ def create_app(
         notes[str(attempt_id)] = result.check.explanation
         request.session["result_notes"] = notes
         return redirect(f"/attempts/{attempt_id}")
+
+    # ── самопроверка части 2 (Phase 8, ADR-0022) ──
+
+    @app.get("/attempts/{attempt_id}/self-check", response_class=HTMLResponse)
+    def self_check_page(request: Request, attempt_id: int):
+        require_login(request)
+        try:
+            check = core.self_check(attempt_id)
+        except AppError as e:
+            flash(request, str(e), "warning")
+            return redirect(f"/attempts/{attempt_id}")
+        lesson_id = core.lesson_of_attempt(attempt_id)
+        return render(
+            request,
+            "self_check.html",
+            attempt=check.attempt,
+            task=check.task,
+            criteria=check.criteria,
+            ai_grades=check.ai_grades,
+            ai=core.ai_status(),
+            ai_allowed=core.ai_allowed_for(attempt_id),
+            lesson=core.lesson(lesson_id) if lesson_id is not None else None,
+        )
+
+    @app.post("/attempts/{attempt_id}/self-grade")
+    async def self_grade(request: Request, attempt_id: int, points: Annotated[str, Form()] = ""):
+        require_login(request)
+        await check_csrf(request)
+        value = _parse_int(points)
+        if value is None:
+            flash(request, "выбери один уровень критериев", "error")
+            return redirect(f"/attempts/{attempt_id}/self-check")
+        try:
+            core.self_grade(attempt_id, value)
+        except AppError as e:
+            flash(request, str(e), "error")
+            return redirect(f"/attempts/{attempt_id}/self-check")
+        return redirect(f"/attempts/{attempt_id}")
+
+    @app.post("/attempts/{attempt_id}/part2")
+    async def attempt_ai_part2(
+        request: Request, attempt_id: int, solution: Annotated[str, Form()] = ""
+    ):
+        """Оценка ИИ к идущей попытке: до самопроверки, «ИИ, предварительно»."""
+        require_login(request)
+        await check_csrf(request)
+        try:
+            attempt = core.attempt(attempt_id)
+            await run_in_threadpool(core.ai_grade_part2, attempt.task_id, solution, attempt_id)
+        except AppError as e:
+            flash(request, str(e), "warning")
+        return redirect(f"/attempts/{attempt_id}/self-check#ai")
 
     @app.post("/attempts/{attempt_id}/run")
     async def run_code(request: Request, attempt_id: int, code: Annotated[str, Form()] = ""):

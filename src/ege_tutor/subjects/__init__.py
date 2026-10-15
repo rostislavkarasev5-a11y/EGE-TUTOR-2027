@@ -7,7 +7,7 @@ from ege_tutor.core.domain import AnswerCheck, AnswerType, Subject
 
 class SubjectTutor(Protocol):
     def check_answer(self, answer_type: AnswerType, expected: str, given: str) -> AnswerCheck:
-        """Проверить краткий ответ. Развёрнутые ответы — Phase 8."""
+        """Проверить краткий ответ. Развёрнутые проверяет самопроверка в CORE (Phase 8)."""
         ...
 
 

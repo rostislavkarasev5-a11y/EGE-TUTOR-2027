@@ -79,8 +79,10 @@ def test_diagnostic_runs_to_the_end_and_saves_baseline(tutor, ids, fixed_clock):
 
 def test_part_two_is_checked_by_final_answer_only(tutor, ids):
     task_id = ids["Уравнение: сколько корней на отрезке?"]
-    with pytest.raises(AppError, match="развёрнутым"):
-        tutor.start_attempt(task_id)  # в тренировке часть 2 — с Phase 8
+    practice = tutor.start_attempt(task_id)  # в тренировке часть 2 — самопроверка (Phase 8)
+    with pytest.raises(AppError, match="самопроверкой"):
+        tutor.submit_answer(practice.id, "2; 5")
+    tutor.abandon_attempt(practice.id)
     attempt = tutor.start_attempt(task_id, AttemptMode.DIAGNOSTIC)
     result = tutor.submit_answer(attempt.id, "2 ;5")
     assert result.check.correct

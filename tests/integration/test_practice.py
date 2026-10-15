@@ -57,8 +57,8 @@ def test_unverified_task_cannot_be_solved(tutor, write_file):
 
 
 def test_extended_and_disputed_tasks_are_not_given(tutor, ids):
-    with pytest.raises(AppError, match="Phase 8"):
-        tutor.start_attempt(ids[4])
+    with pytest.raises(AppError, match="не проверен"):
+        tutor.start_attempt(ids[4])  # часть 2 без проверки и без эталонного решения
     disputed = tutor.review_task(ids[3], answer_is_correct=False)
     assert disputed.verification_status == VerificationStatus.DISPUTED
     with pytest.raises(AppError, match="снята с выдачи"):
@@ -179,7 +179,7 @@ def test_next_task_prefers_least_practiced(tutor, ids):
 
 
 def test_next_task_skips_unpracticable(tutor, ids):
-    with pytest.raises(AppError, match="Phase 8"):
+    with pytest.raises(AppError, match="Непроверенных"):
         tutor.next_task(exam_item=14)
 
 

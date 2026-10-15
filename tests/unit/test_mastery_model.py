@@ -1,6 +1,7 @@
 """Свойства Mastery v0 (ADR-0006, ADR-0015): проверяем свойства, а не конкретные числа."""
 
 import datetime as dt
+from dataclasses import replace
 
 from hypothesis import given
 from hypothesis import strategies as st
@@ -149,3 +150,55 @@ def test_abandoned_attempts_are_not_evidence():
     abandoned = attempt(1)
     abandoned = Attempt(**{**abandoned.__dict__, "status": AttemptStatus.ABANDONED})
     assert MODEL.state([(abandoned, 3)]) is None
+
+
+# ── самопроверка части 2 (Phase 8, ADR-0022): частичный балл ────────────────
+
+
+def self_checked(points: int, max_points: int, *, hint: int = 0, i: int = 1) -> Attempt:
+    base = attempt(i, correct=points == max_points, hint=hint)
+    return replace(base, exam_item=14, points=points, max_points=max_points)
+
+
+@st.composite
+def part2_attempts(draw):
+    max_points = draw(st.integers(1, 4))
+    return self_checked(draw(st.integers(0, max_points)), max_points, hint=draw(st.integers(0, 4)))
+
+
+@given(part2_attempts(), st.one_of(st.none(), st.integers(1, 5)))
+def test_partial_credit_evidence_in_unit_interval(a, difficulty):
+    e, w = MODEL.evidence(a, difficulty)
+    assert 0.0 <= e <= 1.0
+    assert w > 0
+
+
+@given(st.integers(1, 4), st.data())
+def test_partial_credit_is_between_wrong_and_correct(max_points, data):
+    points = data.draw(st.integers(0, max_points))
+    e, _ = MODEL.evidence(self_checked(points, max_points), 3)
+    assert e == points / max_points  # без подсказок, в нормативе, первая попытка
+    full, _ = MODEL.evidence(self_checked(max_points, max_points), 3)
+    assert e <= full
+
+
+@given(st.lists(part2_attempts(), min_size=1, max_size=10))
+def test_mastery_with_partial_credit_stays_in_unit_interval(history):
+    timed = [
+        replace(a, id=i, finished_at=START + dt.timedelta(days=i)) for i, a in enumerate(history)
+    ]
+    state = MODEL.state([(a, 3) for a in timed])
+    assert state is not None
+    assert 0.0 <= state.value_raw <= 1.0
+
+
+def test_self_grade_weight_scales_only_self_checked_attempts():
+    config = CONFIG.model_copy(
+        update={"part2": CONFIG.part2.model_copy(update={"self_grade_weight": 0.7})}
+    )
+    model = MasteryModelV0(config)
+    _, w_short = model.evidence(attempt(), 3)
+    _, w_self = model.evidence(self_checked(2, 2), 3)
+    assert w_short == MODEL.evidence(attempt(), 3)[1]
+    assert w_self == w_short * 0.7
+    assert CONFIG.part2.self_grade_weight == 1.0  # по умолчанию — как ADR-0022

@@ -96,6 +96,13 @@ def classify(attempt: Attempt, task: Task, last_run: CodeRun | None) -> MistakeD
         return MistakeDraft(MistakeCategory.TIME, 0.4, "решение заняло больше двух нормативов")
     if attempt.status == AttemptStatus.GAVE_UP:
         return MistakeDraft(MistakeCategory.TOPIC_GAP, 0.5, "сдался — тему стоит повторить")
+    if attempt.self_checked:
+        return MistakeDraft(
+            MistakeCategory.TOPIC_GAP,
+            0.3,
+            f"самопроверка части 2: {attempt.points} из {attempt.max_points} баллов — "
+            "уточни, что пошло не так",
+        )
     return MistakeDraft(MistakeCategory.TOPIC_GAP, 0.3, "причина неясна — уточни, что пошло не так")
 
 

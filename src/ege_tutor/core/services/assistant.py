@@ -514,11 +514,23 @@ class AssistantService:
             raise AppError(f"номер {task.exam_item} не найден в структуре экзамена")
         return item.max_points
 
-    def grade_part2(self, task_id: int, solution_text: str) -> Part2Grade:
-        """Предварительная оценка развёрнутого решения ИИ. В mastery не идёт (Phase 8)."""
+    def grade_part2(
+        self, task_id: int, solution_text: str, attempt_id: int | None = None
+    ) -> Part2Grade:
+        """Предварительная оценка развёрнутого решения ИИ.
+
+        Сама по себе в mastery не идёт. attempt_id — оценка к идущей попытке (до самопроверки):
+        тогда при самопроверке в прогресс идёт меньшая из двух оценок (ADR-0022, п. 5).
+        """
         task = self._task(task_id)
         if task.answer_type != AnswerType.EXTENDED:
             raise AppError("оценка по критериям — только для заданий с развёрнутым решением")
+        if attempt_id is not None:
+            attempt = self._attempt(attempt_id)
+            if attempt.task_id != task.id:
+                raise AppError(f"попытка №{attempt_id} — на другую задачу")
+            if attempt.status != AttemptStatus.IN_PROGRESS:
+                raise AppError("попытка уже завершена: оценку ИИ можно добавить до самопроверки")
         text = solution_text.strip()
         if len(text) < MIN_SOLUTION_CHARS:
             raise AppError("решение слишком короткое: опиши ход решения")
@@ -529,7 +541,7 @@ class AssistantService:
         try:
             reply = self._ai.grade_part2(self.context(task), text, max_points)
         except AIError as e:
-            raise self._failed(AIPurpose.PART2, e, None, task.id) from e
+            raise self._failed(AIPurpose.PART2, e, attempt_id, task.id) from e
         # CORE не верит баллам на слово: каждый критерий — в своих пределах, сумма — не выше
         # максимума задания.
         criteria = tuple(
@@ -537,7 +549,9 @@ class AssistantService:
             for c in reply.criteria
         )
         points = min(sum(c.points for c in criteria), max_points)
-        call_id = self._record(AIPurpose.PART2, AICallStatus.OK, reply.usage, task_id=task.id)
+        call_id = self._record(
+            AIPurpose.PART2, AICallStatus.OK, reply.usage, attempt_id=attempt_id, task_id=task.id
+        )
         return self._repo.add_part2_grade(
             task_id=task.id,
             solution_text=text,
@@ -548,10 +562,13 @@ class AssistantService:
             status=Part2GradeStatus.AI_PRELIMINARY,
             at=self._clock.now(),
             ai_call_id=call_id,
+            attempt_id=attempt_id,
         )
 
-    def part2_grades(self, task_id: int | None = None) -> list[Part2Grade]:
-        return self._repo.list_part2_grades(task_id)
+    def part2_grades(
+        self, task_id: int | None = None, attempt_id: int | None = None
+    ) -> list[Part2Grade]:
+        return self._repo.list_part2_grades(task_id, attempt_id=attempt_id)
 
     def part2_grade(self, grade_id: int) -> Part2Grade:
         grade = self._repo.get_part2_grade(grade_id)

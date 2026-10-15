@@ -540,6 +540,8 @@ class SqlRepository:
             verdict=row.verdict,
             max_hint_level=row.max_hint_level,
             time_norm_seconds=row.time_norm_seconds,
+            points=row.points,
+            max_points=row.max_points,
         )
 
     def create_attempt(
@@ -628,6 +630,8 @@ class SqlRepository:
         answer: str | None = None,
         answer_normalized: str | None = None,
         verdict: Verdict | None = None,
+        points: int | None = None,
+        max_points: int | None = None,
     ) -> Attempt:
         with self._session.begin() as s:
             row = s.get(AttemptRow, attempt_id)
@@ -638,6 +642,8 @@ class SqlRepository:
             row.answer = answer
             row.answer_normalized = answer_normalized
             row.verdict = verdict
+            row.points = points
+            row.max_points = max_points
             s.flush()
             return self._attempt(row)
 
@@ -1391,12 +1397,16 @@ class SqlRepository:
             s.flush()
             return self._part2_grade(row)
 
-    def list_part2_grades(self, task_id: int | None = None, limit: int = 50) -> list[Part2Grade]:
+    def list_part2_grades(
+        self, task_id: int | None = None, limit: int = 50, attempt_id: int | None = None
+    ) -> list[Part2Grade]:
         query = select(Part2GradeRow).order_by(
             Part2GradeRow.created_at.desc(), Part2GradeRow.id.desc()
         )
         if task_id is not None:
             query = query.where(Part2GradeRow.task_id == task_id)
+        if attempt_id is not None:
+            query = query.where(Part2GradeRow.attempt_id == attempt_id)
         with self._session() as s:
             return [self._part2_grade(row) for row in s.scalars(query.limit(limit))]
 

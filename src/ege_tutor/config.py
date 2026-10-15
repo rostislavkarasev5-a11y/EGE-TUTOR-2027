@@ -227,6 +227,12 @@ class AttemptsConfig(_Strict):
     hint_carryover_hours: PositiveWeight
 
 
+class Part2MasteryConfig(_Strict):
+    # Множитель веса w для попыток части 2 с баллом самопроверки (ADR-0022, п. 5).
+    # 1.0 — самооценка весит как обычная попытка; меньше — ей доверяют меньше.
+    self_grade_weight: PositiveWeight = 1.0
+
+
 class MasteryConfig(_Strict):
     """Коэффициенты Mastery v0 (ADR-0006).
 
@@ -244,6 +250,7 @@ class MasteryConfig(_Strict):
     forgetting: ForgettingConfig
     attempts: AttemptsConfig
     mistakes: MistakesConfig
+    part2: Part2MasteryConfig = Part2MasteryConfig()
 
 
 # ── diagnostics.toml ────────────────────────────────────────────────────────

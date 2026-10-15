@@ -449,3 +449,23 @@ def test_import_reshu_ege_page(tmp_path):
     assert "Добавлено задач: 1" in applied.output
     assert not (tmp_path / "reshu_ege.yaml").exists()  # рядом со страницей ничего не появилось
     assert invoke("import", str(tmp_path / "нет.html")).exit_code == 1
+
+
+def test_self_check_part2_in_solve_and_learn():
+    """Phase 8: часть 2 — решить на бумаге, Enter, эталон и уровни, ввести балл."""
+    tutor = TutorApp.create()
+    tutor.install_starter_bank()
+    tutor.close()
+    result = runner.invoke(app, ["solve", "--item", "14"], input="\n5\n2\nнет\n")
+    assert result.exit_code == 0, result.output
+    assert "Эталонное решение" in result.output
+    assert "Введи целое число от 0 до 2" in result.output
+    assert "Итог: 2 из 2 баллов" in result.output
+    tutor = TutorApp.create()
+    done = tutor.attempts(limit=1)[0]
+    tutor.close()
+    assert (done.answer, done.points, done.max_points) == ("самопроверка: 2 из 2", 2, 2)
+    lesson = runner.invoke(app, ["learn", "M13.root_selection"], input="y\ny\n\n1\nвыход\n")
+    assert lesson.exit_code == 0, lesson.output
+    assert "Итог: 1 из 2 баллов" in lesson.output
+    assert "Продолжить потом: ege learn M13.root_selection" in lesson.output
